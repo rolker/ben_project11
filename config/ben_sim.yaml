@@ -1,15 +1,34 @@
+/**/mru_transform:
+  ros__parameters:
+    sensors:
+      nav:
+        topics:
+          orientation: "sensors/nav/orientation"
+          position: "sensors/nav/position"
+          velocity: "sensors/nav/velocity"
+    sensor_names:
+    - nav
 
-mru_transform/sensors:
- - name: nav
-   topics: { position: 'sensors/nav/position', orientation: 'sensors/nav/orientation', velocity: 'sensors/nav/velocity'}
-
-udp_bridge:
-  name: ben
-  remotes:
-    operator:
-      connections:
-        default:
+/**/platform_sender:
+  ros__parameters:
+    nav:
+      source_names:
+        - nav
+      sources:
+        nav:
           topics:
-            nav_position: {source: sensors/nav/position}
-            nav_orientation: {source: sensors/nav/orientation}
-            nav_velocity: {source: sensors/nav/velocity}
+            orientation: "sensors/nav/orientation"
+            position: "sensors/nav/position"
+            velocity: "sensors/nav/velocity"
+
+/**/udp_bridge:
+  ros__parameters:
+    name: ben
+    remotes:
+      operator:
+        connections:
+          default:
+            topics:
+              nav_position: {source: sensors/nav/position}
+              nav_orientation: {source: sensors/nav/orientation}
+              nav_velocity: {source: sensors/nav/velocity}
