@@ -92,20 +92,6 @@ def generate_launch_description():
     }.items()
   )
 
-  launch_platform_include = IncludeLaunchDescription(
-    PythonLaunchDescriptionSource(
-      PathJoinSubstitution([
-        FindPackageShare('project11'),
-        'launch',
-        'platform_launch.py'
-      ])
-    ),
-    launch_arguments={
-      'namespace': namespace,
-      'platform_package': 'ben_project11'
-    }
-  )
-
   # mru_transform Provides tf2 transforms from multiple gps and motion sensor sources.
   mru_node = Node(
     package='mru_transform',
