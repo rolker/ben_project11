@@ -92,6 +92,9 @@ def generate_launch_description():
     }.items()
   )
 
+
+  remappings = [('/tf', 'tf'), ('/tf_static', 'tf_static')]
+
   # mru_transform Provides tf2 transforms from multiple gps and motion sensor sources.
   mru_node = Node(
     package='mru_transform',
@@ -102,8 +105,23 @@ def generate_launch_description():
       {'map_frame': map_frame},
       {'odom_frame': odom_frame}
     ],
+    remappings=remappings,
   )
 
+
+  launch_nav2_include = IncludeLaunchDescription(
+    PythonLaunchDescriptionSource(
+      PathJoinSubstitution([
+        FindPackageShare('ben_project11'),
+        'launch',
+        'nav2_bringup_launch.py'
+      ])
+    ),
+    launch_arguments={
+      'namespace': namespace,
+      'use_namespace': 'true',
+    }.items()
+  )
 
   namespace_group = GroupAction(
     actions=[
@@ -112,16 +130,6 @@ def generate_launch_description():
       load_sim_parameters,
       launch_robot_core_include,
       mru_node,
-      # Node(
-      #   package='s57_grids',
-      #   executable='s57_grids',
-      #   name='s57_grids'
-      # )
-    # <rosparam command="load" file="$(find ben_project11)/config/ben.yaml"/>
-
-    # <rosparam if="$(arg default_nav_stack)" file="$(find ben_project11)/config/navigator.yaml" command="load" ns="navigator"/>
-
-    # <rosparam if="$(arg use_ccom_planner)" file="$(find ben_project11)/config/navigator_ccom_planner.yaml" command="load" ns="navigator"/>
     ]
   )
 
@@ -134,5 +142,6 @@ def generate_launch_description():
     odom_frame_arg,
     is_simulator_arg,
     launch_publish_state_include,
-    namespace_group
+    namespace_group,
+    launch_nav2_include
   ])
