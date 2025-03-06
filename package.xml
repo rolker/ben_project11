@@ -12,6 +12,7 @@
   <license>BSD</license>
 
   <buildtool_depend>ament_cmake_ros</buildtool_depend>
+  <depend>nav2_bringup</depend>
   <exec_depend>project11</exec_depend>
 
   <export>
