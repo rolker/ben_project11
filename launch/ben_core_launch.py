@@ -120,6 +120,7 @@ def generate_launch_description():
     launch_arguments={
       'namespace': namespace,
       'use_namespace': 'true',
+      'use_composition': 'False',
     }.items()
   )
 

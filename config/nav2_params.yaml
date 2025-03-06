@@ -25,6 +25,59 @@ bt_navigator:
       - compute_path_error_code
       - follow_path_error_code
 
+
+bt_task_navigator:
+  ros__parameters:
+    global_frame: <tf_prefix>/map
+    robot_base_frame: <tf_prefix>/base_link
+    odom_topic: <robot_namespace>/odom
+    bt_loop_duration: 500
+    default_server_timeout: 20
+    wait_for_service_timeout: 1000
+    action_server_result_timeout: 900.0
+    navigators: ["run_tasks",]
+    run_tasks:
+      plugin: "project11_navigation::TaskNavigator"
+      debug: false
+    # 'default_nav_through_poses_bt_xml' and 'default_nav_to_pose_bt_xml' are use defaults:
+    # nav2_bt_navigator/navigate_to_pose_w_replanning_and_recovery.xml
+    # nav2_bt_navigator/navigate_through_poses_w_replanning_and_recovery.xml
+    # They can be set here or via a RewrittenYaml remap from a parent launch file to Nav2.
+
+    # plugin_lib_names is used to add custom BT plugins to the executor (vector of strings).
+    # Built-in plugins are added automatically
+    plugin_lib_names: 
+      - project11_navigation_baxevani_controller_bt_node
+      - project11_navigation_clear_path_bt_node
+      - project11_navigation_crabbing_path_follower_bt_node
+      - project11_navigation_debug_blackboard_bt_node
+      - project11_navigation_generate_plan_bt_node
+      - project11_navigation_get_task_data_double_bt_node
+      - project11_navigation_get_task_data_string_bt_node
+      - project11_navigation_get_sub_tasks_bt_node
+      - project11_navigation_hover_action_bt_node
+      - project11_navigation_hover_cancel_node_bt_node
+      - project11_navigation_multibeam_coverage_action_bt_node
+      - project11_navigation_predict_stopping_pose_bt_node
+      - project11_navigation_set_pose_from_task_bt_node
+      - project11_navigation_set_task_done_bt_node
+      - project11_navigation_set_trajectory_from_task_bt_node
+      - project11_navigation_task_list_updater_bt_node
+      - project11_navigation_update_current_segment_bt_node
+      - project11_navigation_update_current_task_bt_node
+      - project11_navigation_visualize_trajectory_bt_node
+      - project11_navigation_all_tasks_done_bt_node
+      - project11_navigation_goal_reached_bt_node
+      - project11_navigation_plan_needed_bt_node
+
+
+    error_code_names:
+      - compute_path_error_code
+      - follow_path_error_code
+      - hover_error_code
+
+
+
 controller_server:
   ros__parameters:
     controller_frequency: 5.0
@@ -53,8 +106,8 @@ controller_server:
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 2.5
-      yaw_goal_tolerance: 0.5
+      xy_goal_tolerance: 4.5
+      yaw_goal_tolerance: 5.0
     FollowPath:
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
 
@@ -225,7 +278,7 @@ global_costmap:
         minimum_depth: 1.0
         maximum_caution_depth: 2.5
         overhead_clearance: 5.0
-        update_timeout: 0.15
+        update_timeout: 0.75
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 0.05
@@ -286,7 +339,7 @@ behavior_server:
     local_footprint_topic: local_costmap/published_footprint
     global_footprint_topic: global_costmap/published_footprint
     cycle_frequency: 10.0
-    behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait"]
+    behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait", "hover"]
     spin:
       plugin: "nav2_behaviors::Spin"
     backup:
@@ -297,6 +350,14 @@ behavior_server:
       plugin: "nav2_behaviors::Wait"
     assisted_teleop:
       plugin: "nav2_behaviors::AssistedTeleop"
+    hover:
+      plugin: "project11_navigation::Hover"
+      minimum_radius: 5.0
+      maximum_radius: 15.0
+      maximum_speed: 1.5
+      deceleration: -0.45
+      generate_visualization: true
+
     local_frame: <tf_prefix>/odom
     global_frame: <tf_prefix>/map
     robot_base_frame: <tf_prefix>/base_link

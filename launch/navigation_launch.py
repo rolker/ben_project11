@@ -22,6 +22,7 @@ from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import LoadComposableNodes, SetParameter
 from launch_ros.actions import Node
+from launch_ros.actions import LifecycleNode
 from launch_ros.descriptions import ComposableNode, ParameterFile
 from nav2_common.launch import RewrittenYaml
 
@@ -48,6 +49,7 @@ def generate_launch_description():
         'velocity_smoother',
         'collision_monitor',
         'bt_navigator',
+        'bt_task_navigator',
         'waypoint_follower',
         'docking_server',
     ]
@@ -168,7 +170,7 @@ def generate_launch_description():
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings + [('cmd_vel', 'cmd_vel_nav')],
             ),
-            Node(
+            LifecycleNode(
                 package='nav2_bt_navigator',
                 executable='bt_navigator',
                 name='bt_navigator',
@@ -178,6 +180,19 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings,
+                namespace=""
+            ),
+            LifecycleNode(
+                package='nav2_bt_navigator',
+                executable='bt_navigator',
+                name='bt_task_navigator',
+                output='screen',
+                respawn=use_respawn,
+                respawn_delay=2.0,
+                parameters=[configured_params],
+                arguments=['--ros-args', '--log-level', log_level],
+                remappings=remappings,
+                namespace=""
             ),
             Node(
                 package='nav2_waypoint_follower',
@@ -200,7 +215,7 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings
-                + [('cmd_vel', 'cmd_vel_nav')],
+                + [('cmd_vel', 'cmd_vel_nav'), ('cmd_vel_smoothed', 'piloting_mode/autonomous/cmd_vel')],
             ),
             Node(
                 package='nav2_collision_monitor',
@@ -275,6 +290,13 @@ def generate_launch_description():
                         package='nav2_bt_navigator',
                         plugin='nav2_bt_navigator::BtNavigator',
                         name='bt_navigator',
+                        parameters=[configured_params],
+                        remappings=remappings,
+                    ),
+                    ComposableNode(
+                        package='nav2_bt_navigator',
+                        plugin='nav2_bt_navigator::BtNavigator',
+                        name='bt_task_navigator',
                         parameters=[configured_params],
                         remappings=remappings,
                     ),
