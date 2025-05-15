@@ -93,7 +93,7 @@ def generate_launch_description():
   )
 
 
-  remappings = [('/tf', 'tf'), ('/tf_static', 'tf_static')]
+  remappings = []#('/tf', 'tf'), ('/tf_static', 'tf_static')]
 
   # mru_transform Provides tf2 transforms from multiple gps and motion sensor sources.
   mru_node = Node(
@@ -121,6 +121,7 @@ def generate_launch_description():
       'namespace': namespace,
       'use_namespace': 'true',
       'use_composition': 'False',
+      'use_respawn': 'True',
     }.items()
   )
 

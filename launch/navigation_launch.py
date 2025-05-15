@@ -19,11 +19,13 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction, SetEnvironmentVariable
 from launch.conditions import IfCondition
+from launch.substitutions import PathJoinSubstitution
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import LoadComposableNodes, SetParameter
 from launch_ros.actions import Node
 from launch_ros.actions import LifecycleNode
 from launch_ros.descriptions import ComposableNode, ParameterFile
+from launch_ros.substitutions import FindPackageShare
 from nav2_common.launch import RewrittenYaml
 
 
@@ -48,7 +50,7 @@ def generate_launch_description():
         'behavior_server',
         'velocity_smoother',
         'collision_monitor',
-        'bt_navigator',
+        #'bt_navigator',
         'bt_task_navigator',
         'waypoint_follower',
         'docking_server',
@@ -60,7 +62,7 @@ def generate_launch_description():
     # https://github.com/ros/robot_state_publisher/pull/30
     # TODO(orduno) Substitute with `PushNodeRemapping`
     #              https://github.com/ros2/launch_ros/issues/56
-    remappings = [('/tf', 'tf'), ('/tf_static', 'tf_static')]
+    remappings = [] #('/tf', 'tf'), ('/tf_static', 'tf_static')]
 
     # Create our own temporary YAML files that include substitutions
     param_substitutions = {'autostart': autostart}
@@ -127,17 +129,19 @@ def generate_launch_description():
         condition=IfCondition(PythonExpression(['not ', use_composition])),
         actions=[
             SetParameter('use_sim_time', use_sim_time),
-            Node(
+            LifecycleNode(
                 package='nav2_controller',
                 executable='controller_server',
+                name='controller_server',
                 output='screen',
                 respawn=use_respawn,
                 respawn_delay=2.0,
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings + [('cmd_vel', 'cmd_vel_nav')],
+                namespace=""
             ),
-            Node(
+            LifecycleNode(
                 package='nav2_smoother',
                 executable='smoother_server',
                 name='smoother_server',
@@ -147,8 +151,9 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings,
+                namespace=""
             ),
-            Node(
+            LifecycleNode(
                 package='nav2_planner',
                 executable='planner_server',
                 name='planner_server',
@@ -158,8 +163,9 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings,
+                namespace=""
             ),
-            Node(
+            LifecycleNode(
                 package='nav2_behaviors',
                 executable='behavior_server',
                 name='behavior_server',
@@ -169,19 +175,36 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings + [('cmd_vel', 'cmd_vel_nav')],
-            ),
-            LifecycleNode(
-                package='nav2_bt_navigator',
-                executable='bt_navigator',
-                name='bt_navigator',
-                output='screen',
-                respawn=use_respawn,
-                respawn_delay=2.0,
-                parameters=[configured_params],
-                arguments=['--ros-args', '--log-level', log_level],
-                remappings=remappings,
                 namespace=""
             ),
+            # SetParameter(
+            #     name = 'default_nav_to_pose_bt_xml',
+            #     value = PathJoinSubstitution([
+            #         FindPackageShare('nav2_bt_navigator'),
+            #         'behavior_trees',
+            #         'navigate_w_replanning_only_if_path_becomes_invalid.xml'
+            #     ])
+            # ),
+            # SetParameter(
+            #     name = 'default_nav_through_poses_bt_xml',
+            #     value = PathJoinSubstitution([
+            #         FindPackageShare('project11_navigation'),
+            #         'behavior_trees',
+            #         'navigate_through_poses.xml'
+            #     ])
+            # ),
+            # LifecycleNode(
+            #     package='nav2_bt_navigator',
+            #     executable='bt_navigator',
+            #     name='bt_navigator',
+            #     output='screen',
+            #     respawn=use_respawn,
+            #     respawn_delay=2.0,
+            #     parameters=[configured_params],
+            #     arguments=['--ros-args', '--log-level', log_level],
+            #     remappings=remappings,
+            #     namespace=""
+            # ),
             LifecycleNode(
                 package='nav2_bt_navigator',
                 executable='bt_navigator',
@@ -194,7 +217,7 @@ def generate_launch_description():
                 remappings=remappings,
                 namespace=""
             ),
-            Node(
+            LifecycleNode(
                 package='nav2_waypoint_follower',
                 executable='waypoint_follower',
                 name='waypoint_follower',
@@ -204,8 +227,9 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings,
+                namespace=""
             ),
-            Node(
+            LifecycleNode(
                 package='nav2_velocity_smoother',
                 executable='velocity_smoother',
                 name='velocity_smoother',
@@ -216,8 +240,9 @@ def generate_launch_description():
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings
                 + [('cmd_vel', 'cmd_vel_nav'), ('cmd_vel_smoothed', 'piloting_mode/autonomous/cmd_vel')],
+                namespace=""
             ),
-            Node(
+            LifecycleNode(
                 package='nav2_collision_monitor',
                 executable='collision_monitor',
                 name='collision_monitor',
@@ -227,8 +252,9 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings,
+                namespace=""
             ),
-            Node(
+            LifecycleNode(
                 package='opennav_docking',
                 executable='opennav_docking',
                 name='docking_server',
@@ -238,6 +264,7 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings,
+                namespace=""
             ),
             Node(
                 package='nav2_lifecycle_manager',
