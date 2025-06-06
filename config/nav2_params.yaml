@@ -64,6 +64,7 @@ controller_server:
     FollowPath:
       plugin: "project11_navigation::controllers::CrabbingPathFollower"
       default_speed: 2.75
+      visualization: true
       pid:
         upper_limit: 90.0
         lower_limit: -90.0
