@@ -49,91 +49,6 @@ def generate_launch_description():
   )
 
 
-  launch_publish_state_include = IncludeLaunchDescription(
-    PythonLaunchDescriptionSource(
-      PathJoinSubstitution([
-        FindPackageShare('ben_description'),
-        'launch',
-        'publish_state_launch.py'
-      ])
-    )
-  )
-
-
-  # <remap from="local_costmap" to="sensors/lidar/lidar_costmap/costmap/costmap"/>
-  load_ben_parameters = SetParametersFromFile(
-    filename=PathJoinSubstitution([
-      FindPackageShare('ben_project11'),
-      'config',
-      'ben.yaml'
-    ])
-  )
-
-  load_sim_parameters = SetParametersFromFile(
-    filename=PathJoinSubstitution([
-      FindPackageShare('ben_project11'),
-      'config',
-      'ben_sim.yaml'
-    ]),
-    condition=IfCondition(is_simulator)
-  )
-
-  launch_robot_core_include = IncludeLaunchDescription(
-    PythonLaunchDescriptionSource(
-      PathJoinSubstitution([
-        FindPackageShare('project11'),
-        'launch',
-        'robot_core_launch.py'
-      ])
-    ),
-    launch_arguments={
-      'namespace': namespace,
-      'enable_bridge': enable_bridge
-    }.items()
-  )
-
-
-  remappings = []#('/tf', 'tf'), ('/tf_static', 'tf_static')]
-
-  # mru_transform Provides tf2 transforms from multiple gps and motion sensor sources.
-  mru_node = Node(
-    package='mru_transform',
-    executable='mru_transform_node',
-    name='mru_transform',
-    parameters=[
-      {'base_frame': base_frame},
-      {'map_frame': map_frame},
-      {'odom_frame': odom_frame}
-    ],
-    remappings=remappings,
-  )
-
-
-  launch_nav2_include = IncludeLaunchDescription(
-    PythonLaunchDescriptionSource(
-      PathJoinSubstitution([
-        FindPackageShare('ben_project11'),
-        'launch',
-        'nav2_bringup_launch.py'
-      ])
-    ),
-    launch_arguments={
-      'namespace': namespace,
-      'use_namespace': 'true',
-      'use_composition': 'False',
-      'use_respawn': 'True',
-    }.items()
-  )
-
-  namespace_group = GroupAction(
-    actions=[
-      PushROSNamespace(namespace),
-      load_ben_parameters,
-      load_sim_parameters,
-      launch_robot_core_include,
-      mru_node,
-    ]
-  )
 
   return LaunchDescription([
     namespace_arg,
@@ -143,7 +58,87 @@ def generate_launch_description():
     map_frame_arg,
     odom_frame_arg,
     is_simulator_arg,
-    launch_publish_state_include,
-    namespace_group,
-    launch_nav2_include
+    IncludeLaunchDescription(
+      PythonLaunchDescriptionSource(
+        PathJoinSubstitution([
+          FindPackageShare('ben_description'),
+          'launch',
+          'publish_state_launch.py'
+        ])
+      )
+    ),
+    GroupAction(
+      actions=[
+        PushROSNamespace(namespace),
+        # <remap from="local_costmap" to="sensors/lidar/lidar_costmap/costmap/costmap"/>
+        SetParametersFromFile(
+          filename=PathJoinSubstitution([
+            FindPackageShare('ben_project11'),
+            'config',
+            'ben.yaml'
+          ])
+        ),
+        SetParametersFromFile(
+          filename=PathJoinSubstitution([
+            FindPackageShare('ben_project11'),
+            'config',
+            'ben_sim.yaml'
+          ]),
+          condition=IfCondition(is_simulator)
+        ),
+        IncludeLaunchDescription(
+          PythonLaunchDescriptionSource(
+            PathJoinSubstitution([
+              FindPackageShare('project11'),
+              'launch',
+              'robot_core_launch.py'
+            ])
+          ),
+          launch_arguments={
+            'namespace': namespace,
+            'enable_bridge': enable_bridge
+          }.items()
+        ),
+        # mru_transform Provides tf2 transforms from multiple gps and motion sensor sources.
+        Node(
+          package='mru_transform',
+          executable='mru_transform_node',
+          name='mru_transform',
+          parameters=[
+            {'base_frame': base_frame},
+            {'map_frame': map_frame},
+            {'odom_frame': odom_frame}
+          ],
+        ),
+        GroupAction(
+          actions=[
+            PushROSNamespace('s57'),
+            IncludeLaunchDescription(
+              PythonLaunchDescriptionSource(
+                PathJoinSubstitution([
+                  FindPackageShare('s57_grids'),
+                  'launch',
+                  's57_grids_launch.py'
+                ])
+              ),
+            )
+          ]
+        )
+      ]
+    ),
+    IncludeLaunchDescription(
+      PythonLaunchDescriptionSource(
+        PathJoinSubstitution([
+          FindPackageShare('ben_project11'),
+          'launch',
+          'nav2_bringup_launch.py'
+        ])
+      ),
+      launch_arguments={
+        'namespace': namespace,
+        'use_namespace': 'true',
+        'use_composition': 'False',
+        'use_respawn': 'True',
+      }.items()
+    )
   ])

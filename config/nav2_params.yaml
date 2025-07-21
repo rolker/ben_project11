@@ -98,6 +98,8 @@ local_costmap:
         maximum_caution_depth: 2.5
         overhead_clearance: 5.0
         update_timeout: 0.15
+        s57_grids_namespace: <robot_namespace>/s57
+        #get_datasets_service: <robot_namespace>/s57/get_datasets
 
 
       always_send_full_costmap: True
@@ -124,6 +126,8 @@ global_costmap:
         maximum_caution_depth: 2.5
         overhead_clearance: 5.0
         update_timeout: 0.75
+        s57_grids_namespace: <robot_namespace>/s57
+        get_datasets_service: <robot_namespace>/s57/get_datasets
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 0.05
