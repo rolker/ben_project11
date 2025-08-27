@@ -140,6 +140,7 @@ def generate_launch_description():
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings,
                 output='screen',
+                emulate_tty=True
             ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(

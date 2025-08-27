@@ -104,6 +104,7 @@ def generate_launch_description():
           package='mru_transform',
           executable='mru_transform_node',
           name='mru_transform',
+          emulate_tty=True,
           parameters=[
             {'base_frame': base_frame},
             {'map_frame': map_frame},

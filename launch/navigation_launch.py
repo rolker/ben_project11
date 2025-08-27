@@ -139,7 +139,8 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings + [('cmd_vel', 'cmd_vel_nav')],
-                namespace=""
+                namespace="",
+                emulate_tty=True
             ),
             LifecycleNode(
                 package='nav2_smoother',
@@ -151,7 +152,8 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings,
-                namespace=""
+                namespace="",
+                emulate_tty=True
             ),
             LifecycleNode(
                 package='nav2_planner',
@@ -163,7 +165,8 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings,
-                namespace=""
+                namespace="",
+                emulate_tty=True
             ),
             LifecycleNode(
                 package='nav2_behaviors',
@@ -175,7 +178,8 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings + [('cmd_vel', 'cmd_vel_nav')],
-                namespace=""
+                namespace="",
+                emulate_tty=True
             ),
             # SetParameter(
             #     name = 'default_nav_to_pose_bt_xml',
@@ -215,7 +219,8 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings,
-                namespace=""
+                namespace="",
+                emulate_tty=True
             ),
             LifecycleNode(
                 package='nav2_waypoint_follower',
@@ -227,7 +232,8 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings,
-                namespace=""
+                namespace="",
+                emulate_tty=True
             ),
             LifecycleNode(
                 package='nav2_velocity_smoother',
@@ -240,7 +246,8 @@ def generate_launch_description():
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings
                 + [('cmd_vel', 'cmd_vel_nav'), ('cmd_vel_smoothed', 'piloting_mode/autonomous/cmd_vel')],
-                namespace=""
+                namespace="",
+                emulate_tty=True
             ),
             LifecycleNode(
                 package='nav2_collision_monitor',
@@ -252,7 +259,8 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings,
-                namespace=""
+                namespace="",
+                emulate_tty=True
             ),
             LifecycleNode(
                 package='opennav_docking',
@@ -264,7 +272,8 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings,
-                namespace=""
+                namespace="",
+                emulate_tty=True
             ),
             Node(
                 package='nav2_lifecycle_manager',
@@ -273,6 +282,7 @@ def generate_launch_description():
                 output='screen',
                 arguments=['--ros-args', '--log-level', log_level],
                 parameters=[{'autostart': autostart}, {'node_names': lifecycle_nodes}],
+                emulate_tty=True
             ),
         ],
     )
