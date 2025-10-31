@@ -10,7 +10,7 @@ bt_task_navigator:
     action_server_result_timeout: 900.0
     navigators: ["run_tasks",]
     run_tasks:
-      plugin: "project11_navigation::TaskNavigator"
+      plugin: "marine_nav_bt_task_navigator::TaskNavigator"
       debug: false
     # 'default_nav_through_poses_bt_xml' and 'default_nav_to_pose_bt_xml' are use defaults:
     # nav2_bt_navigator/navigate_to_pose_w_replanning_and_recovery.xml
@@ -20,7 +20,7 @@ bt_task_navigator:
     # plugin_lib_names is used to add custom BT plugins to the executor (vector of strings).
     # Built-in plugins are added automatically
     plugin_lib_names: 
-      - project11_navigation_bt_plugins
+      - marine_nav_behavior_tree_bt_plugins
 
 
     error_code_names:
@@ -32,8 +32,8 @@ bt_task_navigator:
 
 controller_server:
   ros__parameters:
-    controller_frequency: 5.0
-    costmap_update_timeout: 1.0
+    controller_frequency: 4.0
+    costmap_update_timeout: 15.0
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.5
     min_theta_velocity_threshold: 0.001
@@ -62,16 +62,19 @@ controller_server:
       yaw_goal_tolerance: 5.0
 
     FollowPath:
-      plugin: "project11_navigation::controllers::CrabbingPathFollower"
+      plugin: "marine_nav_crabbing_path_follower::CrabbingPathFollower"
       default_speed: 2.75
       visualization: true
-      pid:
-        upper_limit: 90.0
-        lower_limit: -90.0
-        windup_limit: 50.0
-        kp: 6.0
-        ki: 0.5
-        kd: 0.6
+      pid: # outputs crab angle in degrees to minimize cross-track error in meters.
+        p: -6.0
+        i: -0.5
+        d: -0.6
+        i_clamp_max: 75.0
+        i_clamp_min: -75.0
+        u_clamp_max: 90.0
+        u_clamp_min: -90.0
+        error_deadband: 0.1
+        tracking_time_constant: 0.0
 
 
 local_costmap:
@@ -152,7 +155,7 @@ planner_server:
   ros__parameters:
     expected_planner_frequency: 0.2
     planner_plugins: ["GridBased"]
-    costmap_update_timeout: 5.0
+    costmap_update_timeout: 15.0
     GridBased:
       plugin: "nav2_smac_planner::SmacPlannerHybrid"
       tolerance: 1.5
@@ -171,6 +174,9 @@ planner_server:
       non_straight_penalty: 1.1
       use_quadratic_cost_penalty: false
 
+manda_coverage:
+  ros__parameters:
+    display_topic: "manda_coverage/display"
 
 smoother_server:
   ros__parameters:
@@ -200,7 +206,7 @@ behavior_server:
     assisted_teleop:
       plugin: "nav2_behaviors::AssistedTeleop"
     hover:
-      plugin: "project11_navigation::Hover"
+      plugin: "marine_nav_behaviors::Hover"
       minimum_radius: 10.0
       maximum_radius: 25.0
       maximum_speed: 1.0
