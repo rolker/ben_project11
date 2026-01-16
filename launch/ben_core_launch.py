@@ -89,7 +89,7 @@ def generate_launch_description():
         IncludeLaunchDescription(
           PythonLaunchDescriptionSource(
             PathJoinSubstitution([
-              FindPackageShare('project11'),
+              FindPackageShare('marine_autonomy'),
               'launch',
               'robot_core_launch.py'
             ])
