@@ -23,6 +23,7 @@ def generate_launch_description():
   odom_frame = LaunchConfiguration('odom_frame')
 
   is_simulator = LaunchConfiguration('is_simulator')
+  params_file = LaunchConfiguration('params_file')
 
   namespace_arg = DeclareLaunchArgument(
     "namespace", default_value=TextSubstitution(text="ben")
@@ -48,6 +49,16 @@ def generate_launch_description():
     "is_simulator", default_value=TextSubstitution(text="false")
   )
 
+  params_file_arg = DeclareLaunchArgument(
+    "params_file",
+    default_value=PathJoinSubstitution([
+      FindPackageShare('ben_project11'),
+      'config',
+      'nav2_params.yaml',
+    ]),
+    description='Full path to the ROS2 parameters file for nav2 nodes',
+  )
+
 
 
   return LaunchDescription([
@@ -58,6 +69,7 @@ def generate_launch_description():
     map_frame_arg,
     odom_frame_arg,
     is_simulator_arg,
+    params_file_arg,
     IncludeLaunchDescription(
       PythonLaunchDescriptionSource(
         PathJoinSubstitution([
@@ -140,6 +152,7 @@ def generate_launch_description():
         'use_namespace': 'true',
         'use_composition': 'False',
         'use_respawn': 'True',
+        'params_file': params_file,
       }.items()
     )
   ])
