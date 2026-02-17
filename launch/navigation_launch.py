@@ -48,6 +48,7 @@ def generate_launch_description():
         'smoother_server',
         'planner_server',
         'behavior_server',
+        'manda_coverage',
         'velocity_smoother',
         'collision_monitor',
         #'bt_navigator',
@@ -178,6 +179,19 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings + [('cmd_vel', 'cmd_vel_nav')],
+                namespace="",
+                emulate_tty=True
+            ),
+            LifecycleNode(
+                package='manda_coverage',
+                executable='manda_coverage_action_server',
+                name='manda_coverage',
+                output='screen',
+                respawn=use_respawn,
+                respawn_delay=2.0,
+                parameters=[configured_params],
+                arguments=['--ros-args', '--log-level', log_level],
+                remappings=remappings + [('soundings', 'sensors/mbes/soundings')],
                 namespace="",
                 emulate_tty=True
             ),

@@ -219,6 +219,10 @@ behavior_server:
     rotational_acc_lim: 3.2
     enable_stamped_cmd_vel: true
 
+manda_coverage:
+  ros__parameters:
+    display_topic: "manda_coverage/display"
+
 waypoint_follower:
   ros__parameters:
     loop_rate: 20
