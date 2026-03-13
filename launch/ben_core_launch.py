@@ -23,6 +23,7 @@ def generate_launch_description():
   odom_frame = LaunchConfiguration('odom_frame')
 
   is_simulator = LaunchConfiguration('is_simulator')
+  launch_robot_state_publisher = LaunchConfiguration('launch_robot_state_publisher')
   params_file = LaunchConfiguration('params_file')
 
   namespace_arg = DeclareLaunchArgument(
@@ -49,6 +50,12 @@ def generate_launch_description():
     "is_simulator", default_value=TextSubstitution(text="false")
   )
 
+  launch_robot_state_publisher_arg = DeclareLaunchArgument(
+    "launch_robot_state_publisher",
+    default_value=TextSubstitution(text="true"),
+    description='Launch robot_state_publisher. Set to false when Gazebo provides one.',
+  )
+
   params_file_arg = DeclareLaunchArgument(
     "params_file",
     default_value=PathJoinSubstitution([
@@ -69,6 +76,7 @@ def generate_launch_description():
     map_frame_arg,
     odom_frame_arg,
     is_simulator_arg,
+    launch_robot_state_publisher_arg,
     params_file_arg,
     IncludeLaunchDescription(
       PythonLaunchDescriptionSource(
@@ -77,7 +85,8 @@ def generate_launch_description():
           'launch',
           'publish_state_launch.py'
         ])
-      )
+      ),
+      condition=IfCondition(launch_robot_state_publisher)
     ),
     GroupAction(
       actions=[
