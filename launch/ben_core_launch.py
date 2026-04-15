@@ -9,6 +9,7 @@ from launch.substitutions import PathJoinSubstitution
 from launch.substitutions import TextSubstitution
 from launch_ros.actions import Node
 from launch_ros.actions import PushROSNamespace
+from launch_ros.actions import SetParameter
 from launch_ros.actions import SetParametersFromFile
 from launch_ros.substitutions import FindPackageShare
 
@@ -131,6 +132,30 @@ def generate_launch_description():
             {'map_frame': map_frame},
             {'odom_frame': odom_frame}
           ],
+        ),
+        # Sea surface estimator: publishes map → map_tide TF
+        SetParameter(
+          name='sea_surface_frame',
+          value=PathJoinSubstitution([tf_prefix, 'map_tide'])
+        ),
+        IncludeLaunchDescription(
+          PythonLaunchDescriptionSource(
+            PathJoinSubstitution([
+              FindPackageShare('mru_transform'),
+              'launch',
+              'sea_surface_estimator_launch.py'
+            ])
+          ),
+        ),
+        # Chart datum: publishes map → chart_datum TF (MLLW offset)
+        IncludeLaunchDescription(
+          PythonLaunchDescriptionSource(
+            PathJoinSubstitution([
+              FindPackageShare('mru_transform'),
+              'launch',
+              'chart_datum_launch.py'
+            ])
+          ),
         ),
         GroupAction(
           actions=[
