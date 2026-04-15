@@ -113,6 +113,12 @@
       windup_limit: 1.0
       max_dt: 1.0
 
+/**/chart_datum:
+  ros__parameters:
+    map_frame: ben/map
+    chart_datum_frame: ben/chart_datum
+    base_frame: ben/base_link
+
 /**/s57_grids:
   ros__parameters:
     map_frame: ben/map
