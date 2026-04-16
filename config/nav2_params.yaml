@@ -100,6 +100,7 @@ local_costmap:
         overhead_clearance: 5.0
         update_timeout: 0.15
         chart_datum_frame: <tf_prefix>/chart_datum
+        sea_surface_frame: <tf_prefix>/map_tide
         s57_grids_namespace: <robot_namespace>/s57
         #get_datasets_service: <robot_namespace>/s57/get_datasets
 
@@ -129,6 +130,7 @@ global_costmap:
         overhead_clearance: 5.0
         update_timeout: 0.75
         chart_datum_frame: <tf_prefix>/chart_datum
+        sea_surface_frame: <tf_prefix>/map_tide
         s57_grids_namespace: <robot_namespace>/s57
         get_datasets_service: <robot_namespace>/s57/get_datasets
       inflation_layer:
