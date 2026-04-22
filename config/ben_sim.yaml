@@ -32,3 +32,18 @@
               nav_position: {source: sensors/nav/position}
               nav_orientation: {source: sensors/nav/orientation}
               nav_velocity: {source: sensors/nav/velocity}
+
+# S57 chart layer tide threshold — sim runs with tide_speed_factor=10
+# move tide ~10× real-time, so the field-appropriate 1 cm threshold
+# fires ~10× as often. 5 cm restores roughly real-time-equivalent
+# invalidation cadence and avoids costmap-stall planner aborts.
+# Requires rolker/s57_tools#17 (tide_invalidate_threshold parameter).
+/**/local_costmap/local_costmap:
+  ros__parameters:
+    chart_layer:
+      tide_invalidate_threshold: 0.05
+
+/**/global_costmap/global_costmap:
+  ros__parameters:
+    chart_layer:
+      tide_invalidate_threshold: 0.05
