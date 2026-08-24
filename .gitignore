@@ -1,0 +1,5 @@
+# Python bytecode. Generated whenever launch files are imported by the launch
+# system, so it appears in a clean checkout the first time the stack is run and
+# otherwise shows up as spurious "uncommitted changes" in status and gh output.
+__pycache__/
+*.py[cod]
