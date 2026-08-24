@@ -116,11 +116,28 @@ global_costmap:
       robot_base_frame: <tf_prefix>/base_link
       robot_radius: 3.0
       footprint: "[[2.65, 0], [2.6, 0.1], [2.4, 0.4], [1.9, 0.6], [1.0, 0.85], [-1.3, 0.85], [-1.35, 0.4], [-1.6, 0.35], [-1.6, -0.35], [-1.35, -0.4], [-1.3, -0.85], [1.0, -0.85], [1.9, -0.6], [2.4, -0.4], [2.6, -0.1], [2.65, 0]]"
-      resolution: 1.0
+      # [#28] 5 m / 12 km, not 1 m / 5 km. Two reasons:
+      #
+      #  * REACH. width/height are METRES, so 5000 was a +/-2.5 km rolling window
+      #    around the boat. The pier -> Appledore transit is ~12.3 km, so the goal
+      #    sat off-map for most of it and SmacPlannerHybrid rejected it outright
+      #    (GoalOutsideMapBounds).
+      #  * COST. inflation_radius is 150 m, so terrain was resolved ~150x finer
+      #    than the decision it feeds — features under ~5 m cannot influence a
+      #    plan that smears every obstacle over 150 m. Inflation is specified in
+      #    metres, so coarsening does not change its behaviour.
+      #
+      # Net: 2400x2400 = 5.8M cells for 12 km, against 5000x5000 = 25M for 5 km —
+      # under a quarter of the cells for more than twice the reach. Obstacle
+      # avoidance stays with the local costmap at 0.5 m, where fidelity matters.
+      # s57_layer scales chart selection to resolution (minimum_scale =
+      # 2*resolution_/0.0003125), so at 5 m it requests approach/coastal charts
+      # rather than downsampling harbour charts.
+      resolution: 5.0
       track_unknown_space: true
       rolling_window: true
-      width: 5000
-      height: 5000
+      width: 12000
+      height: 12000
       plugins: ["chart_layer", "inflation_layer"]
       chart_layer:
         plugin: "s57_layer::S57Layer"

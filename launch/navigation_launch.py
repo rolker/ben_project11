@@ -295,7 +295,15 @@ def generate_launch_description():
                 name='lifecycle_manager_navigation',
                 output='screen',
                 arguments=['--ros-args', '--log-level', log_level],
-                parameters=[{'autostart': autostart}, {'node_names': lifecycle_nodes}],
+                parameters=[{'autostart': autostart}, {'node_names': lifecycle_nodes},
+                            # [#28] nav2 defaults bond_timeout to 4.0, but the planner's
+                            # max_planning_time is 5.0 and createPlan runs on the SAME
+                            # executor as the bond heartbeat. A slow plan therefore
+                            # starved planner_server's bond, and a broken bond makes
+                            # lifecycle_manager deactivate EVERY managed node — taking
+                            # bt_task_navigator down mid-goal. 8.0 gives the planning
+                            # budget headroom instead of a guaranteed overrun.
+                            {'bond_timeout': 8.0}],
                 emulate_tty=True
             ),
         ],
@@ -389,7 +397,12 @@ def generate_launch_description():
                         plugin='nav2_lifecycle_manager::LifecycleManager',
                         name='lifecycle_manager_navigation',
                         parameters=[
-                            {'autostart': autostart, 'node_names': lifecycle_nodes}
+                            # [#28] See the non-composed lifecycle_manager above:
+                            # bond_timeout must exceed the planner's
+                            # max_planning_time or a slow plan starves
+                            # planner_server's bond and bounces every managed node.
+                            {'autostart': autostart, 'node_names': lifecycle_nodes,
+                             'bond_timeout': 8.0}
                         ],
                     ),
                 ],
