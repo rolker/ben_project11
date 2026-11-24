@@ -153,11 +153,27 @@ jobs:
           source /opt/ros/jazzy/setup.bash
           set -eo pipefail
           colcon test-result --verbose | tee test-result.txt
-          collected="$(BEN_PROJECT11_INSTALL_PREFIX="$PWD/install/ben_project11" \
+          # pytest's own "N tests collected" line, not a count of output
+          # lines; with no tests pytest exits 5, which is caught here too.
+          status=0
+          collect="$(BEN_PROJECT11_INSTALL_PREFIX="$PWD/install/ben_project11" \
             PYTHONDONTWRITEBYTECODE=1 python3 -m pytest --collect-only -q \
-            -p no:cacheprovider src/ben_project11/test | grep -c '::')"
+            -p no:cacheprovider src/ben_project11/test 2>&1)" || status=$?
+          collected="$(printf '%s\n' "$collect" \
+            | sed -n 's/^\([0-9][0-9]*\) tests\{0,1\} collected.*/\1/p' | tail -n 1)"
+          if [ "$status" -ne 0 ] || [ -z "$collected" ] || [ "$collected" -eq 0 ]; then
+            printf '%s\n' "$collect" | tail -n 20
+            echo "pytest collected no tests, or its count could not be read" \
+              "(exit $status)" >&2
+            exit 1
+          fi
           registered="$(ctest --test-dir build/ben_project11 -N \
             | sed -n 's/^Total Tests: *//p')"
+          case "$registered" in
+            ''|*[!0-9]*)
+              echo "the CTest count could not be read: '$registered'" >&2
+              exit 1 ;;
+          esac
           ran="$(sed -n 's/^Summary: \([0-9]*\) tests.*/\1/p' test-result.txt)"
           expected=$((collected + registered))
           echo "results: ${ran:-none}; expected: $expected" \
