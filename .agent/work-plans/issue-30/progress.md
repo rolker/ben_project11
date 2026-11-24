@@ -479,3 +479,28 @@ Scratch script: `nav2_bringup_launch.py`'s `ReplaceString` and `PushROSNamespace
 - Composable precedence (the dict after the file) by reading launch_ros only; no container started.
 
 Next: `/review-code --branch`.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-11-24 12:10 -05:00
+**By**: Claude Code Agent (claude-opus-5-5)
+**Verdict**: approved
+
+**Branch**: feature/issue-30 at `6152ab4` (branch head `f489728` adds only records)
+**Base**: origin/rolling
+**Depth**: Standard (reason: round 3 convergence check per handoff; reviews `7da4b06..6152ab4`, three code commits)
+**Must-fix**: 0 | **Suggestions**: 1
+**Round**: 3 | **Ship**: recommended — no must-fix findings; remaining suggestions can be applied or tracked
+
+Reviewers: the lead alone (static analysis, governance, plan drift against the Checkpoint of 12:00); cross-model skipped (round-3 convergence check, per handoff); no adversarial subagent, per handoff. Rolling only, domain 177 checked empty, `DISPLAY` unset, nothing left running.
+
+### Checks run
+- `a285800`: `planner_server_params` returns `[configured_params]` (identity) below 1.5 and `[configured_params, {'GridBased.lookup_table_size': 20.0}]` from 1.5; both the LifecycleNode (`launch/navigation_launch.py:283`) and the ComposableNode (`:447`) take `planner_params`, so Jazzy 1.3.14 and Kilted 1.4.2 get exactly what every other node gets. Nothing of the substitution left: no `numbers`/`tempfile`/`yaml`/`Substitution`/`get_logger`/`perform_substitutions` in the launch file, no launch file imports yaml (`grep` of `launch/*.py`), `python3-yaml` only a `test_depend` (both tests import yaml), the cap's tests and helpers gone. rcl merge re-checked on Rolling: an rclpy node `/ben/planner_server` with `--params-file` nested `GridBased: lookup_table_size: 55.0` then a dotted `"GridBased.lookup_table_size": 20.0` reads back 20.0 (`GridBased.plugin` kept); files reversed, 55.0. The implementer's stock planner_server run (configure succeeds at 20.0 on 1.5.0; fails at 55.0 forced to 1.4.2) agrees. Comments in the launch file and `config/nav2_params.yaml` accurate and tell an operator to change the value in the launch file on 1.5+. `a285800` lacks the two attribution trailers (noted, not a finding).
+- `2507b8c`: comment true per round 2's Rolling evidence.
+- `6152ab4`: read under `set -eo pipefail`: pytest failure captured by `|| status=$?`; `sed`/`tail` cannot fail; non-zero exit (5 no tests, 2 collection error), no count line, or 0 → the step's message and exit 1. The regex takes "1 test collected", "N tests collected in Xs", "N tests collected, 1 warning/error in Xs"; "M/N tests collected (k deselected)" gives empty → message (no `-k`, no pytest config in the repo, so not reached); `-q` prints the line undecorated. Rehearsed on Rolling (step extracted, `env.sh` for the Jazzy setup): `results: 56; expected: 56 (54 pytest cases + 2 CTest entries)`, exit 0.
+- `colcon test` (`test.sh --parallel-workers 1 --packages-select ben_project11`): `Summary: 56 tests, 0 errors, 0 failures, 0 skipped`. Mutations (source restored, `cmp` clean): switch at `>= (1, 4)` → 3 failures (`…is_not_limited_before_1_5[1.4.0|1.4.2]`, `…before_1_5_is_the_file_alone[1.4.2]`); override value 55.0 → 4 failures (`…override_after_the_file[1.5.0|1.5.3|2.0.0]`, `…then_the_override[1.5.0]`).
+- `ament_flake8`: `test/` clean; `launch/navigation_launch.py` 19, as `origin/rolling`.
+- Whole branch: no code commit touches `.agent/` (19 code commits, none mixed); all 19 cherry-pick onto `origin/jazzy` in order without conflict (scratch worktree, removed).
+
+### Findings
+- [ ] (suggestion) CTest count: when `ctest --test-dir build/ben_project11 -N` fails (missing build dir, rc 1 shown on Rolling), `pipefail` + `set -e` end the step at the assignment with ctest's own "Failed to change working directory" and not the step's message; the `case` only covers an empty or non-numeric result. Still exit non-zero, so CI does not lie; `|| true` inside the substitution would route it to the message — `.github/workflows/ci.yml:169-170`
