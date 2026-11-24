@@ -514,3 +514,33 @@ Reviewers: the lead alone (static analysis, governance, plan drift against the C
 **Decision**: publish
 
 Read: the Local Review (Pre-Push) round 3 at `6152ab4`, approved, one suggestion: when `ctest -N` itself fails in the CI count step, the step stops with ctest's message instead of its own. It still exits non-zero, so CI cannot report a false pass; left as it is and named in the pull request. Commit `a285800` lacks the two attribution trailers; history is not rewritten for it. The pull request's first CI run is this repository's first CI run and the first Jazzy evidence for every commit here.
+
+## Integrated Review
+**Status**: complete
+**When**: 2026-11-24 12:20 -05:00
+**By**: Claude Code Agent (claude-sonnet-5-5)
+**Reviews-read**: none
+
+**PR**: #31 at `d727d94`
+**Sources**: 2 (Local Review (Pre-Push) round 3 @ `6152ab4`, covers head via bookkeeping; CI rollup run 45445732805). No pull-request reviews, inline comments or conversation comments exist (human, Copilot or bot).
+**Cross-source confirmations**: 0
+**CI**: all-pass
+
+### Findings
+(none open)
+
+### False positives
+- (Local Review (Pre-Push) @ `6152ab4`, suggestion) `ci.yml` CTest count step ends with ctest's own message, not the step's, when `ctest -N` itself fails — not a defect: the step still exits non-zero, so CI cannot pass falsely; accepted as is at the host's publish checkpoint.
+
+### CI evidence: what the first Jazzy run showed (run 45445732805, job 138628855746, about 2 min 18 s)
+- Installed: `nav2_bt_navigator 1.3.14` (printed by the Build step); apt installed `ros-jazzy-nav2-bt-navigator`, `ros-jazzy-nav2-smac-planner` and `ros-jazzy-nav2-bringup` all `1.3.14-1noble`. Nav2 1.3 is older than 1.4, so the legacy path ran.
+- rosdep: the ten skip-keys (`ben_description marine_autonomy manda_coverage mru_transform s57_grids s57_layer marine_nav_bt_task_navigator marine_nav_crabbing_path_follower marine_nav_behaviors marine_nav_behavior_tree`) were passed; `#All required rosdeps installed successfully`; no unresolved key. The install also pulled Gazebo (`ros-jazzy-gz-*-vendor`, `ros-jazzy-ros-gz-sim/bridge/image/interfaces`, 519-package step); no TurtleBot package.
+- Tests: static `53 passed in 0.37s`, navigator `1 passed in 0.70s`, `Summary: 56 tests, 0 errors, 0 failures, 0 skipped`, `results: 56; expected: 56 (54 pytest cases + 2 CTest entries)`.
+- Navigator log (stock `bt_navigator` as `/ben/bt_task_navigator`): `Creating`, `Configuring`, `Creating navigator id navigate_to_pose of type nav2_bt_navigator::NavigateToPoseNavigator`, then clean shutdown on SIGINT. No WARN, ERROR or FATAL line. The log does not print the values read back for `error_code_names` or `error_code_name_prefixes`; the test prints them only on failure. They are known only through the test's assertions: on Nav2 < 1.4 it asserts configure succeeded, the node is Inactive, and `error_code_names == [compute_path_error_code, follow_path_error_code, hover_error_code]`; it passed.
+- Supported by this run: the launch files load on Jazzy and the version helper reads 1.3.14; on Nav2 1.3 the navigator configures with the files the launch gives it and receives the old three names; the planner parameter path below 1.5 (static wiring test); the `error_code_name_prefixes` key does not stop Nav2 1.3 from configuring; the manifest resolves with strict rosdep.
+- Still by reading only: the composable-node path; BEN's own navigator plugin and behaviour-tree library (stock navigator used); the planner configured on Jazzy (only wiring tested; no `planner_server` started); `hover_error_code` reaching a real result; any vehicle or simulator; Rolling in CI (none by decision).
+
+### PR body statements to update
+- "Nothing was run on Jazzy locally ...; this pull request's CI run is the first Jazzy evidence" — now true of a finished run; add: "CI run 45445732805 on Jazzy (Nav2 1.3.14) passed: strict rosdep, 56 tests, and the stock `bt_navigator` configured with the launch-built files and read back the old three `error_code_names`, with no warning."
+- "On Jazzy the navigator receives the same three names ... Established by reading ...; by three reviews" — add "and by the Jazzy CI navigator test".
+- "Nothing here shows ... composable path ..." stays accurate. Optionally note that the CI job installs Gazebo packages via `nav2_bringup`'s dependencies (about 520 packages in one rosdep step).
