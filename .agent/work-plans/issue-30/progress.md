@@ -122,3 +122,58 @@ The issue review recommended a cut and raised two matters beyond a port; the own
 **Plan**: `.agent/work-plans/issue-30/plan.md` at `bccb7b8`
 
 Part 1 (now, 8 commits, all backported): declare every package the launch and parameter files name; replace `error_code_names` with `error_code_name_prefixes` [compute_path, follow_path, hover] and have `navigation_launch.py` add the old key for Nav2 older than 1.4 (Rolling throws on the old key, proved by configuring stock `bt_navigator` on domain 173; Jazzy ignores the new one); remove `action_server_result_timeout` and `dock_backwards` (neutral on both), comment the behaviour settings; a static test, a bt_navigator configure test and a Jazzy CI job with 10 skip-keys, no Rolling job. Part 2 outlined (first simulated launch after unh_marine_navigation and s57_tools part 2). Corrects the review: the underlay install is `dcffa939`, source `9113449e`; the difference touches none of the files read.
+
+## Plan Review
+**Status**: complete
+**When**: 2026-11-24 10:58 -05:00
+**By**: Claude Code Agent (claude-opus-5-5)
+**Verdict**: ready
+
+**Issue**: #30 — Check and port ben_project11 on ROS 2 Rolling
+**Plan**: `.agent/work-plans/issue-30/plan.md` at `bccb7b8`
+**Branch**: `feature/issue-30`
+
+Reviewed Part 1 (static part) against Nav2 source in the underlay clone (`origin/jazzy` `c7046550`, `origin/kilted`, `origin/lyrical`, `origin/main` `9113449e`), unh_marine_navigation `origin/jazzy`, mission_manager on `rolling`, launch_ros and rosdep as installed here, and ben_description's `ci.yml` on `rolling`. Nothing was launched; one `rosdep install --simulate` was run on a scratch copy of the planned manifest.
+
+### Evaluation
+
+| Dimension | Verdict | Notes |
+|---|---|---|
+| Scope | Good | One PR, 8 commits, ~7 files; Part 2 outlined with preconditions. Matches the owner's cut. |
+| Issue alignment | Good | Covers every Part 1 item of the checkpoint and the issue review's planner actions (manifest, `error_code_names`, ignored settings, Jazzy CI, per-file checking statement). Corrects the review's 23→22 count and its source/install claim. **Serves**: "None written down: the project has no goals or design document." (as checked; not flagged). |
+| File targeting | Good | `package.xml`, `nav2_params.yaml`, `navigation_launch.py`, `CMakeLists.txt`, two tests, `ci.yml`. `nav2_bringup_launch.py`/`ben_core_launch.py` need no change (BEN passes `use_composition: 'False'`, `ben_core_launch.py`). |
+| Consequences | Needs work | The launch-file wiring of the legacy list (what actually reaches a Jazzy boat) has no check; see finding 1. |
+| Principle alignment | Good | Only what's needed (three removals are default-equal on Jazzy, verified below); test what breaks (each check proved by a break); verify before claiming (Jazzy stated as CI-only). |
+| ADR compliance | Good | ADR-0013 (records out of code commits), ADR-0002 (worktree, builds outside `src`). No other ADR triggered. |
+| ROS conventions | Good | Version-gated parameter in a launch file is unusual but bounded; dict parameters after a `ParameterFile` are a normal launch_ros pattern (later sources override; keys do not overlap here). |
+
+### Verification of the plan's claims
+
+- **Error codes, Jazzy** (`origin/jazzy` `bt_action_server_impl.hpp:77-105,179,364-388`): default `[follow_path_error_code, compute_path_error_code]`; `error_code_names` read at configure into `error_code_names_`. `bt_navigator.cpp:35-37` uses `automatically_declare_parameters_from_overrides(true)`, so `error_code_name_prefixes` in the file is declared and never read. BEN's `TaskNavigator` (`task_navigator.h:13-14`, jazzy) derives from `nav2_core::BehaviorTreeNavigator`, which builds the same `BtActionServer` (`behavior_tree_navigator.hpp:205`), and runs inside the stock `bt_navigator` process as launched (`navigation_launch.py:226-238`). Order of the list does not matter (lowest non-zero code wins).
+- **Error codes, boundary**: prefixes and the "MUST be removed" throw landed on main in `7e3ae16d` (2025-03-04, #4341/#4460) while main was 1.3.1, after Jazzy branched (not an ancestor of `origin/jazzy`; Jazzy got only the `error_msg` part, `acea1ef2`). Kilted (1.4.2), Lyrical and main all throw; Jazzy is 1.3.x. `< 1.4` is the right boundary for every released distro.
+- **How the list reaches the node**: launch_ros `Node._create_params_file_from_dict` writes a dict parameter as a second `--params-file` keyed by the node's name (or `/**`), after the `RewrittenYaml` file; a list of strings becomes a string array; `LoadComposableNodes` converts dicts to typed `Parameter` messages. Not passed through `RewrittenYaml`, so its rewriting is irrelevant. Correct on paper for both paths.
+- **`action_server_result_timeout`**: Jazzy default 900.0 in `BtActionServer` (`:67-68`) and `waypoint_follower.cpp:40`, the only two nodes the file sets it on (`:10`, `:234`); 900 since `0976e631` (in tag 1.3.0), so every Jazzy release. Other Jazzy nodes default 10.0 but are not set by the file. Main has no `result_timeout` anywhere in these packages; rcl default 10 s (`rcl_action/action_server.h:250`). mission_manager calls `get_result_async()` right after the goal is accepted (`mission_manager.py:207`), so expiry of a finished result does not affect it.
+- **`dock_backwards`**: Jazzy declares default false (`docking_server.cpp:41`); main still reads it with a deprecation path (`parameter_handler.cpp:56`). Neutral.
+- **Behaviour settings**: Jazzy declares them unprefixed per plugin (`spin.hpp`, `drive_on_heading.hpp:209`, default 2.0); main declares `<behavior>.<key>` with 2.0/1.0/0.4/3.2 (`spin.cpp:52-59`). Comment-only: neutral.
+- **Manifest/rosdep**: rosdep 0.27 here searches `AMENT_PREFIX_PATH` with `--ignore-src`. Scratch manifest with the planned keys: with only the underlay sourced, `Cannot locate rosdep definition` (the same state `marine_autonomy` is already in today); with `core/src` and `platforms/src` as `--from-paths`, resolves cleanly. Vehicle Jazzy workspaces carry unh_marine_navigation and s57_tools (`core.repos`) and ben_description/mru_transform (`platforms.repos`). None of the new keys (or the six project packages' own jazzy dependencies) pulls a viewer or simulator; the Nav2 node keys are inside `navigation2`, already pulled by `nav2_bringup`.
+- **Two by-reading findings** (stray `bt_navigator` and missing `manda_coverage` in the composed branch, `navigation_launch.py:340-353`; `ben_sim.yaml` applied inside a scoped `GroupAction`, `ben_core_launch.py:92-110`, with Nav2 included outside it at `:176`): both confirmed by reading. Neither reaches a vehicle (BEN is launched non-composed; `ben_sim.yaml` is simulator-only, `ben.yaml` has no costmap block). Follow-up/Part 2 is right.
+
+### Findings
+
+1. **[Consequences]** (medium) Step 7 composes its own parameters (installed YAML plus `legacy_error_code_params(...)`), so it proves the helper's output and Nav2's handling of it, but not the wiring in `navigation_launch.py` — that both `bt_task_navigator` descriptions (`LifecycleNode` at `:226` and `ComposableNode` at `:347`) actually carry the helper's result after `configured_params`. That wiring is the only thing that keeps `hover_error_code` on a Jazzy boat after the backport, and dropping it would pass every planned check on Jazzy CI. Add to step 6 an assertion that walks the loaded `LaunchDescription` (or the AST) and finds the helper's result in the `parameters` of both `bt_task_navigator` nodes, with a proof-of-teeth break (remove it from one node).
+2. **[ROS conventions]** (medium) The plan does not say what the launch file does when the version lookup fails. Specify: `get_package_share_directory('nav2_bt_navigator')`, parse `<version>` from its `package.xml`, compare as an integer tuple (no `packaging` dependency), and raise with a clear message on any failure. Never fall back to a default: a Rolling default silently drops `hover` on Jazzy; a Jazzy default crashes on Rolling. Add a guard case to step 6 for an unparsable version.
+3. **[File targeting]** (low) `nav2_bringup_launch.py:37` calls `get_package_share_directory('ben_project11')` at load time, so step 6's "launch files load" needs `ben_project11` on the ament index. ben_description's pattern does not source `install/setup.bash`; the test's `ament_add_pytest_test` needs `ENV AMENT_PREFIX_PATH=${CMAKE_INSTALL_PREFIX}:$ENV{AMENT_PREFIX_PATH}` (or equivalent), and the manifest check must exclude the package's own name (`FindPackageShare('ben_project11')` appears four times in `ben_core_launch.py`).
+4. **[Scope]** (low) Step 7 must apply the launch's `ReplaceString` substitutions (or otherwise replace the placeholders): `odom_topic: <robot_namespace>/odom` (`nav2_params.yaml:6`) is not a valid topic name, and `bt_navigator` creates its odometry subscription at configure. State in the plan how the Rolling run in the table handled it so the test does the same.
+5. **[Issue alignment]** (low, information) Part 2's check "a RunTasks goal ... result reaches mission_manager after it runs longer than 10 s" will pass trivially: mission_manager requests the result as soon as the goal is accepted (`mission_manager.py:207`), and rcl's `result_timeout` only expires results after the goal finishes. The real loss on Rolling is for a late client (e.g. one asking for a result more than 10 s after completion); say so in the PR record rather than presenting the Part 2 check as covering it.
+
+### Summary
+
+The plan is sound and its key readings hold from source: option A leaves Jazzy's effective parameters identical (the same three `error_code_names`, 900 s result timeouts by default, `dock_backwards` false by default) and fixes the Rolling crash. Ready for implementation once the wiring check (1) and the lookup failure mode (2) are folded into steps 2 and 6.
+
+### Recommended Actions
+
+- [ ] Add to the static test an assertion that both `bt_task_navigator` node descriptions in `navigation_launch.py` receive `legacy_error_code_params(...)` after `configured_params`, with a deliberate-break proof.
+- [ ] Specify the version lookup in `navigation_launch.py`: ament index + `package.xml` `<version>`, integer-tuple compare, raise on failure; add a guard case.
+- [ ] Make the installed package visible on the ament index for the load test (`AMENT_PREFIX_PATH` in the test's `ENV`), and exclude `ben_project11` itself from the manifest check.
+- [ ] In step 7, substitute `<robot_namespace>`/`<tf_prefix>` as the launch does.
+- [ ] Reword Part 2's result-timeout check (mission_manager asks for the result at acceptance) and record the late-client case in the PR.
