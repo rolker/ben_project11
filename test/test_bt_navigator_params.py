@@ -165,43 +165,64 @@ def test_bt_task_navigator_configures(tmp_path, monkeypatch):
     log_path = tmp_path / 'bt_navigator.log'
     with open(log_path, 'w') as log:
         process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT)
-    rclpy.init()
-    node = rclpy.create_node('test_bt_navigator_params')
+    # From here on, every way out stops the navigator: rclpy's set-up is
+    # inside the try, and each teardown step is guarded by the next.
+    node = None
+    initialized = False
     try:
-        prefix = f'/{NAMESPACE}/{NODE}'
-        result = call(node, node.create_client(ChangeState, f'{prefix}/change_state'),
-                      ChangeState.Request(transition=Transition(
-                          id=Transition.TRANSITION_CONFIGURE)), process, log_path)
-        log_text = log_path.read_text()
-        assert result.success, f'configure failed (Nav2 {version}):\n{log_text}'
-        state = call(node, node.create_client(GetState, f'{prefix}/get_state'),
-                     GetState.Request(), process, log_path)
-        assert state.current_state.id == State.PRIMARY_STATE_INACTIVE, log_text
-
-        client = node.create_client(GetParameters, f'{prefix}/get_parameters')
-
-        def string_array(name):
-            # An undeclared name gets an empty answer.
-            values = call(node, client, GetParameters.Request(names=[name]),
-                          process, log_path).values
-            if not values or values[0].type == ParameterType.PARAMETER_NOT_SET:
-                return None
-            return list(values[0].string_array_value)
-
-        if legacy:
-            assert string_array('error_code_names') == \
-                [p + '_error_code' for p in PREFIXES], log_text
-        else:
-            assert string_array('error_code_names') is None, log_text
-            assert string_array('error_code_name_prefixes') == PREFIXES, log_text
-        print(f'Nav2 {version}:\n{log_text}')
+        rclpy.init()
+        initialized = True
+        node = rclpy.create_node('test_bt_navigator_params')
+        check_navigator(node, process, log_path, version, legacy)
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
-        if process.poll() is None:
-            process.send_signal(signal.SIGINT)
+        try:
+            if node is not None:
+                node.destroy_node()
+        finally:
             try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
+                if initialized:
+                    rclpy.shutdown()
+            finally:
+                stop(process)
+
+
+def check_navigator(node, process, log_path, version, legacy):
+    """Configure the navigator and read its error-code parameters back."""
+    prefix = f'/{NAMESPACE}/{NODE}'
+    result = call(node, node.create_client(ChangeState, f'{prefix}/change_state'),
+                  ChangeState.Request(transition=Transition(
+                      id=Transition.TRANSITION_CONFIGURE)), process, log_path)
+    log_text = log_path.read_text()
+    assert result.success, f'configure failed (Nav2 {version}):\n{log_text}'
+    state = call(node, node.create_client(GetState, f'{prefix}/get_state'),
+                 GetState.Request(), process, log_path)
+    assert state.current_state.id == State.PRIMARY_STATE_INACTIVE, log_text
+
+    client = node.create_client(GetParameters, f'{prefix}/get_parameters')
+
+    def string_array(name):
+        # An undeclared name gets an empty answer.
+        values = call(node, client, GetParameters.Request(names=[name]),
+                      process, log_path).values
+        if not values or values[0].type == ParameterType.PARAMETER_NOT_SET:
+            return None
+        return list(values[0].string_array_value)
+
+    if legacy:
+        assert string_array('error_code_names') == \
+            [p + '_error_code' for p in PREFIXES], log_text
+    else:
+        assert string_array('error_code_names') is None, log_text
+        assert string_array('error_code_name_prefixes') == PREFIXES, log_text
+    print(f'Nav2 {version}:\n{log_text}')
+
+
+def stop(process):
+    """Stop the navigator: SIGINT, then SIGKILL after 10 s."""
+    if process.poll() is None:
+        process.send_signal(signal.SIGINT)
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
