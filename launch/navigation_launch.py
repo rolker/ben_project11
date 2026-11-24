@@ -12,27 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import numbers
 import os
-import tempfile
 import xml.etree.ElementTree as ET
 
 from ament_index_python.packages import get_package_share_directory
 
-from launch import LaunchDescription, Substitution
+from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction, SetEnvironmentVariable
 from launch.conditions import IfCondition
-from launch.logging import get_logger
 from launch.substitutions import PathJoinSubstitution
 from launch.substitutions import LaunchConfiguration, PythonExpression
-from launch.utilities import normalize_to_list_of_substitutions, perform_substitutions
 from launch_ros.actions import LoadComposableNodes, SetParameter
 from launch_ros.actions import Node
 from launch_ros.actions import LifecycleNode
 from launch_ros.descriptions import ComposableNode, ParameterFile
 from launch_ros.substitutions import FindPackageShare
 from nav2_common.launch import RewrittenYaml
-import yaml
 
 
 # Error codes of bt_task_navigator. config/nav2_params.yaml gives
@@ -57,8 +52,8 @@ VERSION_PURPOSE = {
         'it decides whether bt_task_navigator gets error_code_names '
         '(Nav2 older than 1.4) or not',
     'nav2_smac_planner':
-        'it decides whether planner_server gets lookup_table_size lowered to '
-        '20 (nav2_smac_planner 1.5 and later) or not',
+        'it decides whether planner_server gets GridBased.lookup_table_size '
+        'overridden to 20 (nav2_smac_planner 1.5 and later) or not',
 }
 
 
@@ -108,29 +103,21 @@ def installed_nav2_smac_planner_version():
     return installed_version('nav2_smac_planner')
 
 
-# lookup_table_size of SmacPlannerHybrid. Newer Nav2 refuses a value above
-# 20 (m) when the planner is configured ("lookup_table_size must be in
-# [0.0, 20.0]"), so planner_server does not configure and bring-up fails.
-# config/nav2_params.yaml keeps 55.0, which Jazzy reads unchanged; where
-# Nav2 has the limit, planner_server gets a copy of the parameter file in
-# which each SmacPlannerHybrid lookup_table_size above 20 is lowered to 20.
-# A value of 20 or less, or none (Nav2's default is 20), is left as it is,
-# so a custom params_file is never raised and a legal value never lowered.
-#
-# Where the limit is: Nav2 d7bf2ac0 (#6566) on main and 221cdb28 (#6595)
-# on lyrical; not on jazzy (1.3.x) or kilted (1.4.x). nav2_smac_planner's
-# package.xml does not tell an install with it from one without: main is
-# 1.5.0 before and after d7bf2ac0, and lyrical 1.5.2 before and after
-# 221cdb28 (1.5.3, the next release, has it). So the test is the safe
-# side, nav2_smac_planner 1.5 and later: lowering to 20 where the limit is
-# not (Lyrical 1.5.0 to 1.5.2, main before d7bf2ac0) only shrinks the
-# heuristic table; leaving 55 where it is stops the planner server. If
-# Nav2 ever puts the limit on jazzy or kilted, this test will not see it.
-LOOKUP_TABLE_SIZE_LIMIT = 20.0
-SMAC_HYBRID_PLUGINS = (
-    'nav2_smac_planner::SmacPlannerHybrid',
-    'nav2_smac_planner/SmacPlannerHybrid',
-)
+# lookup_table_size of SmacPlannerHybrid. Nav2's Smac planner refuses a
+# value above 20 (m) from nav2_smac_planner 1.5 on ("lookup_table_size must
+# be in [0.0, 20.0]", Nav2 d7bf2ac0 on main and 221cdb28 on lyrical; not on
+# jazzy 1.3 or kilted 1.4), so planner_server does not configure with the
+# 55.0 in config/nav2_params.yaml. From 1.5 on this launch file therefore
+# overrides it to 20.0, with a parameter entry after the parameter file.
+# - The override also replaces a custom params_file's
+#   GridBased.lookup_table_size, and sets it when the file has none: on
+#   those Nav2 versions change the value here, not in the parameter file.
+# - It applies only to the planner id GridBased.
+# - The package version cannot mark the limit exactly (main is 1.5.0 and
+#   lyrical 1.5.2 both before and after it), so 1.5.0 to 1.5.2 are lowered
+#   too; that only shrinks the heuristic table.
+# - A backport of the limit to an older Nav2 line would not be detected.
+LOOKUP_TABLE_SIZE_OVERRIDE = {'GridBased.lookup_table_size': 20.0}
 
 
 def lookup_table_size_is_limited(smac_planner_version):
@@ -138,85 +125,10 @@ def lookup_table_size_is_limited(smac_planner_version):
     return nav2_version_tuple(smac_planner_version, 'nav2_smac_planner') >= (1, 5)
 
 
-def cap_lookup_table_size(data):
-    """Lower each SmacPlannerHybrid lookup_table_size above the limit to it.
-
-    data is a parsed parameter file; it is changed in place. The planners
-    are those named in planner_plugins of any ros__parameters block, with
-    their settings nested (GridBased: {lookup_table_size: ...}) or dotted
-    (GridBased.lookup_table_size). Return [(planner, old value)] for each
-    value lowered.
-    """
-    lowered = []
-
-    def setting(params, planner, key):
-        nested = params.get(planner)
-        if isinstance(nested, dict) and key in nested:
-            return nested, key
-        if f'{planner}.{key}' in params:
-            return params, f'{planner}.{key}'
-        return None, None
-
-    def visit(block):
-        if not isinstance(block, dict):
-            return
-        params = block.get('ros__parameters')
-        if isinstance(params, dict) and isinstance(params.get('planner_plugins'), list):
-            for planner in params['planner_plugins']:
-                holder, key = setting(params, planner, 'plugin')
-                if holder is None or holder[key] not in SMAC_HYBRID_PLUGINS:
-                    continue
-                holder, key = setting(params, planner, 'lookup_table_size')
-                if holder is None:
-                    continue
-                value = holder[key]
-                if isinstance(value, numbers.Real) and not isinstance(value, bool) and \
-                        value > LOOKUP_TABLE_SIZE_LIMIT:
-                    holder[key] = LOOKUP_TABLE_SIZE_LIMIT
-                    lowered.append((planner, value))
-        for value in block.values():
-            visit(value)
-
-    visit(data)
-    return lowered
-
-
-class LookupTableSizeCapped(Substitution):
-    """A parameter file with cap_lookup_table_size applied.
-
-    Evaluates to the source file's path when nothing is above the limit,
-    else to a copy with the values lowered.
-    """
-
-    def __init__(self, source_file):
-        super().__init__()
-        self.__source_file = normalize_to_list_of_substitutions(source_file)
-
-    def describe(self):
-        return 'LookupTableSizeCapped({})'.format(
-            ' + '.join(s.describe() for s in self.__source_file))
-
-    def perform(self, context):
-        path = perform_substitutions(context, self.__source_file)
-        with open(path) as source:
-            data = yaml.safe_load(source)
-        lowered = cap_lookup_table_size(data)
-        if not lowered:
-            return path
-        for planner, value in lowered:
-            get_logger('ben_project11.navigation_launch').warning(
-                f'planner_server: {planner}.lookup_table_size {value} lowered to '
-                f'{LOOKUP_TABLE_SIZE_LIMIT} (this nav2_smac_planner refuses more)')
-        with tempfile.NamedTemporaryFile(
-                mode='w', prefix='ben_planner_params_', delete=False) as copy:
-            yaml.safe_dump(data, copy)
-            return copy.name
-
-
-def planner_server_params(smac_planner_version, rewritten_params, configured_params):
+def planner_server_params(smac_planner_version, configured_params):
     """Return planner_server's parameters for this nav2_smac_planner version."""
     if lookup_table_size_is_limited(smac_planner_version):
-        return [ParameterFile(LookupTableSizeCapped(rewritten_params), allow_substs=True)]
+        return [configured_params, dict(LOOKUP_TABLE_SIZE_OVERRIDE)]
     return [configured_params]
 
 
@@ -267,11 +179,10 @@ def generate_launch_description():
     )
     configured_params = ParameterFile(rewritten_params, allow_substs=True)
 
-    # The parameter file, or on nav2_smac_planner 1.5 and later a copy with
-    # lookup_table_size lowered where it is above 20 (see
-    # LookupTableSizeCapped).
+    # The parameter file, and after it on nav2_smac_planner 1.5 and later
+    # GridBased.lookup_table_size 20.0 (see LOOKUP_TABLE_SIZE_OVERRIDE).
     planner_params = planner_server_params(
-        installed_nav2_smac_planner_version(), rewritten_params, configured_params)
+        installed_nav2_smac_planner_version(), configured_params)
 
     # Before the parameter file: launch_ros passes each entry as its own
     # --params-file, in this order, and a later file wins over an earlier

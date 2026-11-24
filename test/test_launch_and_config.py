@@ -22,12 +22,10 @@ What is checked:
 - lookup_table_size of planner_server: the shipped file keeps 55.0 (what
   Jazzy reads); lookup_table_size_is_limited is true from
   nav2_smac_planner 1.5 on and false before, an unparsable or unreadable
-  version is an error; cap_lookup_table_size lowers only a
-  SmacPlannerHybrid value above 20, nested or dotted, and leaves 20 or
-  less, a missing value and other planners alone; both planner_server
-  descriptions get the parameter file itself before 1.5, and from 1.5 a
-  copy that differs from it only where a value was above 20 (shown with
-  the shipped file and custom files at 10 and with no value).
+  version is an error; planner_server_params gives exactly the parameter
+  file before 1.5 and the file followed by GridBased.lookup_table_size
+  20.0 from 1.5 on, and both planner_server descriptions carry it (the
+  override after the file, so that it wins).
 
 The ROS 1 launch files (launch/*.launch) are not checked: they are XML for
 ROS 1, outside the launch/*.py set by their extension, and cannot run on
@@ -38,7 +36,6 @@ import ast
 import os
 import pathlib
 import sys
-import tempfile
 import xml.etree.ElementTree as ET
 
 from ament_index_python.packages import get_package_share_directory
@@ -229,7 +226,7 @@ def packages_named_by_parameter_files():
 
 def test_every_named_package_is_declared():
     named = packages_named_by_launch_files() | packages_named_by_parameter_files()
-    assert {'nav2_bt_navigator', 'nav2_smac_planner', 's57_layer', 'python3-yaml'} <= named
+    assert {'nav2_bt_navigator', 'nav2_smac_planner', 's57_layer'} <= named
     missing = sorted(named - declared_packages() - {PACKAGE})
     assert not missing, f'not declared in package.xml: {missing}'
 
@@ -354,121 +351,44 @@ def test_unreadable_smac_planner_version_is_an_error(tmp_path):
         module.installed_nav2_smac_planner_version()
 
 
-def planner_file(planners):
-    """A parameter file under namespace ben with these {id: settings} planners."""
-    return {'ben': {PLANNER: {'ros__parameters': dict(
-        {'planner_plugins': list(planners), 'expected_planner_frequency': 0.2},
-        **planners)}}}
-
-
-@pytest.mark.parametrize('size, expected', [
-    (55.0, 20.0), (55, 20.0), (20.5, 20.0), (20.0, 20.0), (20, 20), (10.0, 10.0), (0.0, 0.0)])
-def test_cap_lookup_table_size(size, expected):
-    data = planner_file({'GridBased': {'plugin': HYBRID, 'lookup_table_size': size}})
-    lowered = load('navigation_launch.py').cap_lookup_table_size(data)
-    params = data['ben'][PLANNER]['ros__parameters']
-    assert params['GridBased']['lookup_table_size'] == expected
-    assert type(params['GridBased']['lookup_table_size']) is type(expected)
-    assert lowered == ([('GridBased', size)] if size > 20 else [])
-    assert params['expected_planner_frequency'] == 0.2
-
-
-def test_cap_lookup_table_size_dotted_and_slash_plugin():
-    data = {'/**': {'ros__parameters': {
-        'planner_plugins': ['A'], 'A.plugin': 'nav2_smac_planner/SmacPlannerHybrid',
-        'A.lookup_table_size': 30.0}}}
-    assert load('navigation_launch.py').cap_lookup_table_size(data) == [('A', 30.0)]
-    assert data['/**']['ros__parameters']['A.lookup_table_size'] == 20.0
-
-
-def test_cap_lookup_table_size_leaves_the_rest_alone():
-    planners = {
-        'NoSize': {'plugin': HYBRID},
-        'Lattice': {'plugin': 'nav2_smac_planner::SmacPlannerLattice', 'lookup_table_size': 55.0},
-        'Unlisted': {'plugin': HYBRID, 'lookup_table_size': 55.0},
-        'Hybrid': {'plugin': HYBRID, 'lookup_table_size': 40.0},
-    }
-    data = planner_file(planners)
-    params = data['ben'][PLANNER]['ros__parameters']
-    params['planner_plugins'] = ['NoSize', 'Lattice', 'Hybrid']
-    before = yaml.safe_load(yaml.safe_dump(data))
-    assert load('navigation_launch.py').cap_lookup_table_size(data) == [('Hybrid', 40.0)]
-    before['ben'][PLANNER]['ros__parameters']['Hybrid']['lookup_table_size'] = 20.0
-    assert data == before
-    assert 'lookup_table_size' not in params['NoSize']
-
-
-def test_lookup_table_size_capped_substitution(tmp_path, monkeypatch):
-    monkeypatch.setattr(tempfile, 'tempdir', str(tmp_path))
-    module = load('navigation_launch.py')
-    context = LaunchContext()
-    for size, expected in ((55.0, 20.0), (10.0, 10.0)):
-        source = tmp_path / f'source_{size}.yaml'
-        source.write_text(yaml.safe_dump(planner_file(
-            {'GridBased': {'plugin': HYBRID, 'lookup_table_size': size}})))
-        result = module.LookupTableSizeCapped(str(source)).perform(context)
-        data = yaml.safe_load(pathlib.Path(result).read_text())
-        assert data['ben'][PLANNER]['ros__parameters']['GridBased']['lookup_table_size'] == \
-            expected
-        # The source itself when nothing is lowered, a copy otherwise.
-        assert (pathlib.Path(result) == source) == (size == expected)
-
-
-def evaluated_planner_files(module, params_file):
-    """Evaluate both planner_server descriptions' parameters for this params_file."""
-    context = LaunchContext()
-    context.launch_configurations.update(
-        {'namespace': 'ben', 'params_file': str(params_file), 'autostart': 'true'})
-    result = {}
-    description = module.generate_launch_description()
-    for kind, parameters in node_parameters(description, PLANNER).items():
-        assert len(parameters) == 1 and isinstance(parameters[0], ParameterFile), kind
-        [path] = evaluate_parameters(context, parameters)
-        # The ParameterFile deletes its evaluated file when it is collected: read it now.
-        result[kind] = (parameters[0], yaml.safe_load(pathlib.Path(path).read_text()))
-    return result
-
-
 @pytest.mark.parametrize('version', ['1.3.14', '1.4.2'])
-def test_both_planner_servers_get_the_parameter_file_before_1_5(version):
+def test_planner_server_params_before_1_5_is_the_file_alone(version):
+    configured_params = object()
+    assert load('navigation_launch.py').planner_server_params(version, configured_params) \
+        == [configured_params]
+    [entry] = load('navigation_launch.py').planner_server_params(version, configured_params)
+    assert entry is configured_params
+
+
+@pytest.mark.parametrize('version', ['1.5.0', '1.5.3', '2.0.0'])
+def test_planner_server_params_from_1_5_override_after_the_file(version):
+    configured_params = object()
+    entries = load('navigation_launch.py').planner_server_params(version, configured_params)
+    assert entries[0] is configured_params
+    assert entries[1:] == [{'GridBased.lookup_table_size': 20.0}]
+
+
+def test_unparsable_smac_planner_version_stops_planner_server_params():
+    with pytest.raises(RuntimeError, match='nav2_smac_planner version'):
+        load('navigation_launch.py').planner_server_params('abc', object())
+
+
+@pytest.mark.parametrize('version', ['1.3.14', '1.4.2', '1.5.0'])
+def test_both_planner_servers_get_the_parameter_file_then_the_override(version):
     module = load('navigation_launch.py')
     module.installed_nav2_smac_planner_version = lambda: version
+    expected = [{'GridBased.lookup_table_size': 20.0}] \
+        if module.lookup_table_size_is_limited(version) else []
+    context = LaunchContext()
     description = module.generate_launch_description()
     [controller] = node_parameters(description, 'controller_server')['LifecycleNode']
     for kind, parameters in node_parameters(description, PLANNER).items():
-        # A ParameterFile of the very RewrittenYaml every other node gets.
-        # (launch_ros copies the ParameterFile itself when it normalizes the
-        # list, so the RewrittenYaml is what can be compared by identity.)
-        assert len(parameters) == 1 and isinstance(parameters[0], ParameterFile), kind
+        # First a ParameterFile of the very RewrittenYaml every other node
+        # gets (launch_ros copies the ParameterFile itself when it normalizes
+        # the list, so the RewrittenYaml is what can be compared by
+        # identity), then the override, if any: the later entry wins.
+        assert isinstance(parameters[0], ParameterFile), kind
         [source] = parameters[0].param_file
         assert source is controller.param_file[0], kind
         assert type(source).__name__ == 'RewrittenYaml', kind
-
-
-@pytest.mark.parametrize('custom, expected', [
-    (None, 20.0), (10.0, 10.0), ('absent', None)])
-def test_both_planner_servers_get_a_capped_copy_from_1_5(custom, expected, tmp_path, monkeypatch):
-    monkeypatch.setattr(tempfile, 'tempdir', str(tmp_path))
-    params_file = SHARE / 'config' / 'nav2_params.yaml'
-    if custom is not None:
-        data = yaml.safe_load(params_file.read_text())
-        grid = data[PLANNER]['ros__parameters']['GridBased']
-        if custom == 'absent':
-            del grid['lookup_table_size']
-        else:
-            grid['lookup_table_size'] = custom
-        params_file = tmp_path / 'custom_nav2_params.yaml'
-        params_file.write_text(yaml.safe_dump(data))
-
-    module = load('navigation_launch.py')
-    module.installed_nav2_smac_planner_version = lambda: '1.4.2'
-    unchanged = evaluated_planner_files(module, params_file)['LifecycleNode'][1]
-    module.installed_nav2_smac_planner_version = lambda: '1.5.0'
-    for kind, (parameter_file, data) in evaluated_planner_files(module, params_file).items():
-        grid = data['ben'][PLANNER]['ros__parameters']['GridBased']
-        assert grid.get('lookup_table_size') == expected, kind
-        # Nothing else differs from the file the other nodes get.
-        if expected is not None:
-            grid['lookup_table_size'] = \
-                unchanged['ben'][PLANNER]['ros__parameters']['GridBased']['lookup_table_size']
-        assert data == unchanged, kind
+        assert list(evaluate_parameters(context, parameters[1:])) == expected, kind
