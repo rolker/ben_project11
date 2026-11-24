@@ -433,3 +433,49 @@ All eight are closed by `47f00d3`, `239aae0`, `0a5dcac`, `da1937f`, `3e0dbec`, `
 **Decision**: address
 
 Read: the Local Review (Pre-Push) round 2 at `33fb08f`, approved, no must-fix, four suggestions. One more narrow fix pass before publishing: (1) **the planner cap is replaced by the simple override the review recommends**: on `nav2_smac_planner` 1.5 and later, a parameter entry `GridBased.lookup_table_size: 20.0` placed after the parameter file for both `planner_server` descriptions; below 1.5 the planner gets exactly the parameter file, as before. The launch-time rewriting substitution (about 110 lines), its temporary file and the `python3-yaml` exec dependency go. What is given up: on Rolling and Lyrical a custom parameter file's own value for that one key is overridden to 20 (also a legal value below 20), and the key is set when the file has none; no vehicle runs there, the shipped file is what the switch exists for, and the comment says how to change it. The owner's option read "the launch file lowers the value to 20 only where Nav2 has the limit, the same way the error-code fix switches on Nav2's version"; this is that, in about ten lines. (2) The comment on the error-code order is qualified for a `/**`-keyed list with an empty namespace. (3) The CI count takes pytest's "N tests collected" line and cannot stop silently on zero. (4) The pull request tells the owner the three things the review lists (the version cannot mark the limit exactly; a Nav2 backport of the limit to Jazzy would stop `planner_server` on a vehicle after an upgrade and the switch would not see it; the launch file now needs `nav2_smac_planner` installed to load).
+
+## Implementation
+**Status**: complete
+**When**: 2026-11-24 12:07 -05:00
+**By**: Claude Code Agent (claude-opus-5-5)
+
+**Branch**: feature/issue-30 at `2a75056`
+**Addressed**: Local Review (Pre-Push) at `33fb08f` (2026-11-24 11:53 -05:00), as the Checkpoint of 2026-11-24 12:00 -05:00 directs
+**Commits**: `a285800`, `2507b8c`, `6152ab4` (code, none touching `.agent/`, each ends "Backport to jazzy."); `2a75056` (records: boxes ticked)
+
+Fix round 2, narrow. Nothing pushed or posted. Rolling only; every process on domain 193 (checked empty with `ros2 node list --no-daemon`), `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST`, `DISPLAY` unset; no navigator or planner left running. `a285800` lacks the two attribution trailers (omitted by mistake; not amended, per the no-amend rule); the later commits carry them.
+
+### Actions
+- [x] (suggestion, host's decision) The cap replaced by the simple override — `a285800`. `launch/navigation_launch.py`: `LookupTableSizeCapped`, `cap_lookup_table_size`, `SMAC_HYBRID_PLUGINS`, `LOOKUP_TABLE_SIZE_LIMIT` and the `numbers`/`tempfile`/`yaml`/`Substitution`/`get_logger`/`perform_substitutions` imports removed; `LOOKUP_TABLE_SIZE_OVERRIDE = {'GridBased.lookup_table_size': 20.0}`; `planner_server_params(smac_planner_version, configured_params)` returns `[configured_params]` below 1.5 (the identical object) and `[configured_params, dict(LOOKUP_TABLE_SIZE_OVERRIDE)]` from 1.5, used by both `planner_server` descriptions; the version lookup still raises on any failure. Comments in the launch file and `config/nav2_params.yaml` (55.0 kept) say: from Smac planner 1.5 overridden to 20.0 because Nav2 refuses more (`d7bf2ac0` main, `221cdb28` lyrical); the override replaces a custom file's value and sets it when absent, so change it in the launch file there; only the planner id `GridBased`; 1.5.0–1.5.2 lowered too, harmlessly; a backport of the limit to an older line is not detected. `python3-yaml` back to `test_depend` (no launch file imports yaml now: `grep` of `launch/*.py`; `scripts/` is shell). Static tests: the removed cap's tests gone; new `planner_server_params` on each side of 1.5 (below: exactly `[configured_params]`, identity), unparsable version raises, wiring on both descriptions (first a `ParameterFile` of the very RewrittenYaml `controller_server` gets, then exactly `[{'GridBased.lookup_table_size': 20.0}]` from 1.5 and nothing before). Net change of `navigation_launch.py` against `origin/rolling`: +129 −12 (was +229 in round 2's diffstat).
+- [x] (suggestion) Error-code order comment qualified — `2507b8c`: true for a list keyed by the node's name; with an empty namespace a `/**`-keyed list loses, as `-p use_sim_time` makes `/**` the first entry; BEN's namespace is `ben`. Comment only.
+- [x] (suggestion) CI count — `6152ab4`: the count comes from pytest's `N tests collected` line; pytest's exit status is captured (`|| status=$?`), and a non-zero exit (5 with no tests), a missing line or 0 ends with `pytest collected no tests, or its count could not be read (exit N)`; an unreadable CTest count ends with its own message.
+- [x] (suggestion) The pull request statements — below.
+
+### Rolling proof of the override (nested key in the file, dotted key in the dict)
+Scratch script: `nav2_bringup_launch.py`'s `ReplaceString` and `PushROSNamespace` applied (namespace `ben`), the launch file's own `planner_server` LifecycleNode, `_perform_substitutions`, its `--params-file` arguments from `node.cmd` in order; only `chart_layer` (s57_layer, not ported) removed from `global_costmap` in the RewrittenYaml copy; stock `planner_server` as `/ben/planner_server`.
+- Installed 1.5.0 (underlay with `d7bf2ac0`): two files — RewrittenYaml with nested `GridBased: lookup_table_size: 55.0`, then launch_ros's `"/ben/planner_server": "ros__parameters": "GridBased.lookup_table_size": 20.0`. Configure succeeds, state `inactive` (2), `GridBased.lookup_table_size` reads back `20.0`; log: `Created global planner plugin GridBased of type nav2_smac_planner::SmacPlannerHybrid`, `Even sized heuristic lookup table size set 20.000000, increasing size by 1 to make odd`.
+- Version forced to 1.4.2: one file, configure fails, state `unconfigured`, reads back `55.0`; `[FATAL] [ben.planner_server]: Failed to create global planner. Exception: lookup_table_size must be in [0.0, 20.0]`.
+- The composable description was not started (no container); its order is checked statically only.
+
+### Tests
+- Build: `build.sh --parallel-workers 2 --packages-select ben_project11` → `Summary: 1 package finished`.
+- Full `colcon test` (`test.sh --parallel-workers 1 --packages-select ben_project11`, after the last code commit): `53 passed`, `1 passed`, `100% tests passed, 0 tests failed out of 2`, `Summary: 56 tests, 0 errors, 0 failures, 0 skipped`.
+- Navigator test: 10 separate runs, 10 passed (0.62–0.82 s); none left running.
+- Breaks (source file, symlink install, restored and compared with `cmp`): override before the file → 4 failures (`test_planner_server_params_from_1_5_override_after_the_file[1.5.0|1.5.3|2.0.0]`, `test_both_planner_servers_get_the_parameter_file_then_the_override[1.5.0]`); override missing from the composable description → `…then_the_override[1.5.0]`; missing from the lifecycle description → the same; applied below 1.5 → 4 (`test_planner_server_params_before_1_5_is_the_file_alone[1.3.14|1.4.2]`, `…then_the_override[1.3.14|1.4.2]`).
+- CI step rehearsed on Rolling (its script extracted from the workflow, `env.sh` for the Jazzy setup, scratch workspaces): normal `results: 56; expected: 56 (54 pytest cases + 2 CTest entries)`, exit 0; no results `0` vs `56`, exit 1; navigator test unregistered in CMake (scratch build and `colcon test`) `54` vs `55`, exit 1; empty test directory → the step's own message, `(exit 5)`, exit 1.
+- `ament_flake8 launch/navigation_launch.py`: 19 warnings, `origin/rolling`'s file 19; `ament_flake8 test/`: none; `ament_xmllint package.xml`: none.
+
+### Why Jazzy's behaviour is unchanged, per code commit (by reading; Jazzy not installed here)
+- `a285800`: on Jazzy `nav2_smac_planner` is 1.3.14, so both planner descriptions get `[configured_params]`, the very object every other node gets, as on `origin/rolling` before this branch; `nav2_params.yaml` values unchanged (comment only). Still new on Jazzy since round 1: the launch file reads `nav2_smac_planner`'s `package.xml` at load. `python3-yaml` is a test dependency again, as on `origin/rolling`.
+- `2507b8c`: comment only. `6152ab4`: CI only.
+
+### For the pull request (statements for the owner)
+1. **The version cannot mark the limit exactly.** The switch is `nav2_smac_planner` ≥ 1.5. Lyrical 1.5.0 to 1.5.2 and Nav2 main before `d7bf2ac0` do not have the limit but are lowered to 20 too (the package version is the same before and after the limit). That only shrinks the heuristic table; whether 20 plans acceptably is a Part 2 check.
+2. **A backport would not be seen.** If Nav2 backports the limit to jazzy (or kilted), the switch does not see it: after an apt upgrade a vehicle's `planner_server` would stop configuring with `lookup_table_size must be in [0.0, 20.0]`, until the override is extended to that version.
+3. **The launch file needs `nav2_smac_planner` installed to load**, even with a params_file that uses no Smac planner (it reads that package's version and raises if it cannot). And on 1.5 and later the override replaces a custom params_file's `GridBased.lookup_table_size` (and sets it when absent): change it in the launch file there, not in the parameter file. It applies only to the planner id `GridBased`.
+
+### Unverified
+- Everything on Jazzy beyond reading: the 1.3.14 planner wiring with the real install, and the CI step on the Jazzy image. The first CI run is the first Jazzy evidence.
+- Composable precedence (the dict after the file) by reading launch_ros only; no container started.
+
+Next: `/review-code --branch`.
