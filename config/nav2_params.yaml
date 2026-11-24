@@ -220,6 +220,11 @@ behavior_server:
     global_frame: <tf_prefix>/map
     robot_base_frame: <tf_prefix>/base_link
     transform_tolerance: 0.1
+    # Read here, on the server, by Nav2 1.4 and older (Jazzy): Spin reads
+    # all four, BackUp and DriveOnHeading read simulate_ahead_time. Nav2 on
+    # Rolling reads them per behaviour instead (spin.max_rotational_vel,
+    # backup.simulate_ahead_time, ...) and ignores these. The values are
+    # Nav2's defaults on both, so a change here applies to Jazzy only.
     simulate_ahead_time: 2.0
     max_rotational_vel: 1.0
     min_rotational_vel: 0.4
