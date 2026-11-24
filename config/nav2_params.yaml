@@ -298,7 +298,6 @@ docking_server:
     max_retries: 3
     base_frame: <tf_prefix>/base_link
     fixed_frame: <tf_prefix>/odom
-    dock_backwards: false
     dock_prestaging_tolerance: 0.5
 
     # Types of docks
