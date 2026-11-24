@@ -122,25 +122,47 @@ jobs:
             --event-handlers console_direct+ --return-code-on-test-failure
 
       - name: Navigator log
-        # What the Jazzy bt_navigator logged in test_bt_navigator_params.
+        # What the Jazzy bt_navigator logged in test_bt_navigator_params:
+        # the file it writes in its pytest tmp_path, found by its name, not
+        # by pytest's (truncated) directory names.
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         shell: bash
         run: |
-          shopt -s nullglob
-          logs=(/tmp/pytest-of-*/pytest-[0-9]*/test_bt_task_navigator_configu[0-9]*/bt_navigator.log)
-          for log in "${logs[@]}"; do
+          found=0
+          while IFS= read -r -d '' log; do
+            found=1
             echo "== $log"
             cat "$log"
-          done
-          if [ "${#logs[@]}" -eq 0 ]; then
+          done < <(find "${TMPDIR:-/tmp}" /tmp -path '*pytest-of-*' \
+                     -name bt_navigator.log -print0 2>/dev/null | sort -zu)
+          if [ "$found" -eq 0 ]; then
             echo "no bt_navigator log found"
           fi
 
       - name: Test results
+        # Fails on a failed test, and when fewer (or more) results are
+        # found than expected, so a test that silently stops running or
+        # writing results is caught (colcon test-result alone passes with
+        # none). The expected count is derived here, not written down: every
+        # pytest case collected from test/ plus one CTest entry per test
+        # CMakeLists.txt registers. Adding a test changes both sides.
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         working-directory: ../ws
         shell: bash
         run: |
           source /opt/ros/jazzy/setup.bash
           set -eo pipefail
-          colcon test-result --verbose
-        if: always()
+          colcon test-result --verbose | tee test-result.txt
+          collected="$(BEN_PROJECT11_INSTALL_PREFIX="$PWD/install/ben_project11" \
+            PYTHONDONTWRITEBYTECODE=1 python3 -m pytest --collect-only -q \
+            -p no:cacheprovider src/ben_project11/test | grep -c '::')"
+          registered="$(ctest --test-dir build/ben_project11 -N \
+            | sed -n 's/^Total Tests: *//p')"
+          ran="$(sed -n 's/^Summary: \([0-9]*\) tests.*/\1/p' test-result.txt)"
+          expected=$((collected + registered))
+          echo "results: ${ran:-none}; expected: $expected" \
+            "($collected pytest cases + $registered CTest entries)"
+          if [ "${ran:-0}" -ne "$expected" ] || [ "$expected" -lt 3 ]; then
+            echo "test result count is not the expected one" >&2
+            exit 1
+          fi
