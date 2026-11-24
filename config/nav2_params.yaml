@@ -22,10 +22,11 @@ bt_task_navigator:
       - marine_nav_behavior_tree_bt_plugins
 
 
-    # Nav2 1.4 and later (Rolling) read <prefix>_error_code from these
-    # prefixes and refuse error_code_names. Nav2 older than 1.4 (Jazzy)
-    # ignores this key; launch/navigation_launch.py gives it
-    # error_code_names with the same three names instead.
+    # Nav2 1.4 and later (Kilted 1.4, Lyrical 1.5, and Nav2's main branch,
+    # which Rolling builds) read <prefix>_error_code from these prefixes and
+    # refuse error_code_names. Nav2 1.3 (Jazzy) ignores this key;
+    # launch/navigation_launch.py gives it error_code_names with the same
+    # three names instead.
     error_code_name_prefixes:
       - compute_path
       - follow_path
@@ -220,11 +221,13 @@ behavior_server:
     global_frame: <tf_prefix>/map
     robot_base_frame: <tf_prefix>/base_link
     transform_tolerance: 0.1
-    # Read here, on the server, by Nav2 1.4 and older (Jazzy): Spin reads
-    # all four, BackUp and DriveOnHeading read simulate_ahead_time. Nav2 on
-    # Rolling reads them per behaviour instead (spin.max_rotational_vel,
-    # backup.simulate_ahead_time, ...) and ignores these. The values are
-    # Nav2's defaults on both, so a change here applies to Jazzy only.
+    # Read here, on the server, by Nav2 1.5 and older (Jazzy 1.3, Kilted
+    # 1.4, Lyrical 1.5): Spin reads all four, BackUp and DriveOnHeading read
+    # simulate_ahead_time. Nav2's main branch (Rolling) reads them per
+    # behaviour instead (spin.max_rotational_vel, backup.simulate_ahead_time,
+    # ...) and ignores these. The values are Nav2's defaults on both, so a
+    # change here applies to Nav2 1.5 and older only (the vehicles' Jazzy
+    # among them).
     simulate_ahead_time: 2.0
     max_rotational_vel: 1.0
     min_rotational_vel: 0.4

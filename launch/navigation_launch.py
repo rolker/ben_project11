@@ -31,11 +31,12 @@ from nav2_common.launch import RewrittenYaml
 
 
 # Error codes of bt_task_navigator. config/nav2_params.yaml gives
-# error_code_name_prefixes (Nav2 1.4 and later; Kilted, Lyrical, Rolling),
-# which refuse error_code_names at configure. Nav2 older than 1.4 (Jazzy)
-# reads only error_code_names, and without it drops hover_error_code; it
-# is given here for those versions only, ahead of the parameter file so
-# that a file with its own error_code_names wins. Keep this list equal to the
+# error_code_name_prefixes (Nav2 1.4 and later: Kilted 1.4, Lyrical 1.5 and
+# Nav2's main branch, which Rolling builds), which refuse error_code_names
+# at configure. Nav2 older than 1.4 (Jazzy 1.3) reads only
+# error_code_names, and without it drops hover_error_code; it is given
+# here for those versions only, ahead of the parameter file so that a
+# file with its own error_code_names wins. Keep this list equal to the
 # prefixes in the parameter file with '_error_code' appended
 # (test/test_launch_and_config.py checks it).
 LEGACY_ERROR_CODE_NAMES = [
