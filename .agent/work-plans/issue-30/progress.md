@@ -286,3 +286,44 @@ Nav2 `d7bf2ac0` (2026-10-03, #6566, "Validate parameter bounds ...", on `main` o
 - `buildtool_depend ament_cmake_ros` (`package.xml`; now used by the isolated test).
 - Out of scope: parameters for the unreviewed field-server navigation work.
 - New: `lookup_table_size: 55.0` (above), pending the owner's choice.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-11-24 11:22 -05:00
+**By**: Claude Code Agent (claude-opus-5-5)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-30 at `301536c` (code head; branch head `ee7aa66` adds only the implementation record)
+**Base**: origin/rolling
+**Depth**: Standard (reason: 7 code files, ~760 code lines, a new CI workflow and a launch-file change that reaches a vehicle; the other ~660 lines are `.agent/` records)
+**Must-fix**: 2 | **Suggestions**: 6
+**Round**: 1 | **Ship**: continue — round 1: 2 must-fix (both mechanical); first round always re-reviews after fixes
+
+Reviewers: static analysis (ament_flake8, ament_pep257, ament_xmllint; nothing on touched lines worth reporting: a deliberate `except Exception` that re-raises, one C402, two D213), governance and plan drift (by the lead), a fresh Claude adversarial subagent, and cross-model Gemini and Codex (both completed, `EXIT=0`). Run here: the package built and `colcon test --packages-select ben_project11` under the registered wrappers (29 tests, 0 failures; `test_bt_navigator_params` passed under `ament_add_ros_isolated_pytest_test`, which chose its own domain); three breaks of my own on scratch copies (below); `rosdep resolve --rosdistro jazzy --os ubuntu:noble` on every key; gitcloud `field/ben_project11` checked (`jazzy` = GitHub `jazzy` `b8a53a3`; its `feature/issue-10` is already in `jazzy`; no field Nav2 fork there).
+
+### Jazzy vehicle behaviour, per commit (Nav2 `origin/jazzy` `c7046550`, `nav2_bt_navigator` 1.3.14; Jazzy not installed here, so by reading; the first CI run is the first Jazzy run)
+- `aae76a0` manifest: unchanged (no launch or parameter change; every non-skipped key resolves on jazzy/noble; the ten skip-keys have no rule on any distro).
+- `c02aa8a` error codes: unchanged **for the shipped `nav2_params.yaml`**: Jazzy `BtNavigator` auto-declares overrides (`bt_navigator.cpp:37`), so `has_parameter("error_code_names")` skips the defaults block (`bt_action_server_impl.hpp:82`) and `:179` reads the three names from the second params file launch_ros writes from the dict (`node.py:363-368,440-457`, keyed `/ben/bt_task_navigator`); `error_code_name_prefixes` is read nowhere on `origin/jazzy`. **Changed for an operator-supplied `params_file` that carries its own `error_code_names`**: the dict comes after the file and replaces that list (must-fix 1). The lookup cannot raise on a healthy install (ament installs `package.xml` to `share/<pkg>`; `1.3.14` parses); if it does, the exception is raised when `navigation_launch.py` is loaded: directly, before any node; under `ben_core_launch.py`, when the Nav2 include is visited, so launch reports "Caught exception in launch" and shuts down what it already started; only reachable when `nav2_bt_navigator` is missing or broken, when the navigator could not start anyway.
+- `934ad6b` `action_server_result_timeout`: unchanged (900.0 is Jazzy's default on both nodes, `bt_action_server_impl.hpp:67-68`, `waypoint_follower.cpp:40`).
+- `2686472` `dock_backwards`: unchanged (`false` is Jazzy's default, `docking_server.cpp:41`).
+- `cd63732`, tests, CI: comment, test and CI only.
+
+### `lookup_table_size: 55.0` (implementer's finding, for the owner; facts only)
+- Jazzy: `GridBased.lookup_table_size` (m) / (resolution 1.0 × downsampling 1) → table dim 55 (odd, kept); 20 → 20 → 21. Table holds `dim × ceil(dim/2) × 72` Dubins distances: 55 × 28 × 72 = 110,880 floats (~0.43 MB) vs 21 × 11 × 72 = 16,632 (~65 KB). It is the obstacle-free Dubins (turning radius 5 m = 5 cells) heuristic within ±27 cells (55) or ±10 cells (21) of the goal; outside, `getDistanceHeuristic` gives 0 when an obstacle heuristic exists and the heuristic is `max(obstacle, dist)` (`node_hybrid.cpp:443-450,746-781` on jazzy). So a smaller table changes heuristic guidance (search effort and possibly path shape near the goal approach), not feasibility.
+- Bound: `d7bf2ac0` (#6566) is on `main`, and **also on `lyrical`** as `221cdb28` (#6595, merged 2026-10-02): the implementation entry's "main only" is wrong. Not on `origin/jazzy` or `origin/kilted`; #6566 carries only the `backport-lyrical` label.
+- Rest of that commit against BEN's files: `angle_quantization_bins` in [1, 1024] (72 ok), `analytic_expansion_max_length` in [0, 1000] (25.0 ok), costmap width/height > 0 and cell count < INT_MAX (5000 × 5000 = 25 M ok; local 350), controller/planner fail on a failed costmap configure. `max_iterations: -1` is not bounded there (warning only, as the implementer saw). The other stock nodes configured on Rolling in the implementer's run.
+
+### Breaks of my own (scratch copies, built outside the tree, static test run against each install)
+- Helper result placed before `configured_params`: caught by `test_both_bt_task_navigators_get_the_legacy_parameters[1.3.14]` (but see must-fix 1: that order is the better one).
+- Boundary changed to `(1, 3)`: caught by `test_legacy_error_code_params_before_1_4[1.3.0, 1.3.14, 1.3]`.
+- `marine_nav_behavior_tree` (named only through `plugin_lib_names`) dropped from `package.xml`: caught by `test_every_named_package_is_declared`.
+
+### Findings
+- [ ] (must-fix) Put `legacy_error_code_params(...)` **before** `configured_params` for both `bt_task_navigator` descriptions, so a Jazzy `params_file` with its own `error_code_names` keeps it (today's behaviour) and the shipped file still gets the three names; update the wiring test and the comment. As written, a custom list is silently replaced on Jazzy (Codex, Gemini) — `launch/navigation_launch.py:135-137`, `test/test_launch_and_config.py:270-273`
+- [ ] (must-fix) `subprocess.Popen`, `rclpy.init()` and `create_node()` sit outside `try`, so a failure there leaves `bt_navigator` running; start the `try` right after `Popen` and guard the teardown (Claude adversarial, Gemini, Codex) — `test/test_bt_navigator_params.py:163-167`
+- [ ] (suggestion) CI has no zero-test guard: `colcon test-result` returns 0 with no results, and its `if: always()` step also runs (and fails on the missing `../ws`) after an early failure; gate it like `Test` and assert the expected test count; the navigator-log glob depends on pytest's 30-character truncation — `.github/workflows/ci.yml:124-146`
+- [ ] (suggestion) The Jazzy read-back writes the extra parameters as its own `/**` YAML with lists, not the file launch_ros writes (`/ben/bt_task_navigator`, tuples); consider using `Node._create_params_file_from_dict` so the test reads what a vehicle receives — `test/test_bt_navigator_params.py:148-153`
+- [ ] (suggestion) `reaches_parameters` passes an empty node block (`all([])` is true) — `test/test_launch_and_config.py:162-167`
+- [ ] (suggestion) Comments name versions loosely: "Nav2 1.4 and later (Rolling)" omits Kilted and Lyrical; the `behavior_server` comment's "1.4 and older" misses Lyrical 1.5.3, which also reads the settings on the server (only `main` reads them per behaviour) — `config/nav2_params.yaml:25-28,223-227`
+- [ ] (suggestion) Correct the implementation record for the pull request: #6566's bound is on `lyrical` too (`221cdb28`, #6595), not `main` only — `.agent/work-plans/issue-30/progress.md` (Implementation, "New finding")
+- [ ] (suggestion) Owner call already being raised by the host: `lookup_table_size: 55.0` stops `planner_server` configuring on Rolling and Lyrical; facts above — `config/nav2_params.yaml:178`
