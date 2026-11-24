@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import xml.etree.ElementTree as ET
 
 from ament_index_python.packages import get_package_share_directory
 
@@ -27,6 +28,108 @@ from launch_ros.actions import LifecycleNode
 from launch_ros.descriptions import ComposableNode, ParameterFile
 from launch_ros.substitutions import FindPackageShare
 from nav2_common.launch import RewrittenYaml
+
+
+# Error codes of bt_task_navigator. config/nav2_params.yaml gives
+# error_code_name_prefixes (Nav2 1.4 and later: Kilted 1.4, Lyrical 1.5 and
+# Nav2's main branch, which Rolling builds), which refuse error_code_names
+# at configure. Nav2 older than 1.4 (Jazzy 1.3) reads only
+# error_code_names, and without it drops hover_error_code; it is given
+# here for those versions only, ahead of the parameter file so that a
+# file with its own error_code_names wins. Keep this list equal to the
+# prefixes in the parameter file with '_error_code' appended
+# (test/test_launch_and_config.py checks it).
+LEGACY_ERROR_CODE_NAMES = [
+    'compute_path_error_code',
+    'follow_path_error_code',
+    'hover_error_code',
+]
+
+
+# What each installed Nav2 package's version decides, for the error messages.
+VERSION_PURPOSE = {
+    'nav2_bt_navigator':
+        'it decides whether bt_task_navigator gets error_code_names '
+        '(Nav2 older than 1.4) or not',
+    'nav2_smac_planner':
+        'it decides whether planner_server gets GridBased.lookup_table_size '
+        'overridden to 20 (nav2_smac_planner 1.5 and later) or not',
+}
+
+
+def nav2_version_tuple(version, package='nav2_bt_navigator'):
+    """Return a version string such as '1.3.14' as a tuple of integers."""
+    try:
+        parts = tuple(int(part) for part in version.strip().split('.'))
+    except (AttributeError, ValueError):
+        parts = ()
+    if len(parts) < 2:
+        raise RuntimeError(
+            f'ben_project11: cannot parse the {package} version {version!r}; '
+            f'{VERSION_PURPOSE[package]}')
+    return parts
+
+
+def legacy_error_code_params(nav2_version):
+    """Return the extra bt_task_navigator parameters for this Nav2 version."""
+    if nav2_version_tuple(nav2_version) < (1, 4):
+        return [{'error_code_names': list(LEGACY_ERROR_CODE_NAMES)}]
+    return []
+
+
+def installed_version(package):
+    """Return the <version> of an installed package's package.xml."""
+    try:
+        share = get_package_share_directory(package)
+        version = ET.parse(os.path.join(share, 'package.xml')).getroot().findtext('version')
+    except Exception as error:
+        raise RuntimeError(
+            f'ben_project11: cannot read the version of the installed {package} '
+            f'({error}); {VERSION_PURPOSE[package]}') from error
+    if not version:
+        raise RuntimeError(
+            f'ben_project11: the installed {package} package.xml has no <version>; '
+            f'{VERSION_PURPOSE[package]}')
+    return version
+
+
+def installed_nav2_bt_navigator_version():
+    """Return the <version> of the installed nav2_bt_navigator's package.xml."""
+    return installed_version('nav2_bt_navigator')
+
+
+def installed_nav2_smac_planner_version():
+    """Return the <version> of the installed nav2_smac_planner's package.xml."""
+    return installed_version('nav2_smac_planner')
+
+
+# lookup_table_size of SmacPlannerHybrid. Nav2's Smac planner refuses a
+# value above 20 (m) from nav2_smac_planner 1.5 on ("lookup_table_size must
+# be in [0.0, 20.0]", Nav2 d7bf2ac0 on main and 221cdb28 on lyrical; not on
+# jazzy 1.3 or kilted 1.4), so planner_server does not configure with the
+# 55.0 in config/nav2_params.yaml. From 1.5 on this launch file therefore
+# overrides it to 20.0, with a parameter entry after the parameter file.
+# - The override also replaces a custom params_file's
+#   GridBased.lookup_table_size, and sets it when the file has none: on
+#   those Nav2 versions change the value here, not in the parameter file.
+# - It applies only to the planner id GridBased.
+# - The package version cannot mark the limit exactly (main is 1.5.0 and
+#   lyrical 1.5.2 both before and after it), so 1.5.0 to 1.5.2 are lowered
+#   too; that only shrinks the heuristic table.
+# - A backport of the limit to an older Nav2 line would not be detected.
+LOOKUP_TABLE_SIZE_OVERRIDE = {'GridBased.lookup_table_size': 20.0}
+
+
+def lookup_table_size_is_limited(smac_planner_version):
+    """Return whether this nav2_smac_planner refuses lookup_table_size above 20."""
+    return nav2_version_tuple(smac_planner_version, 'nav2_smac_planner') >= (1, 5)
+
+
+def planner_server_params(smac_planner_version, configured_params):
+    """Return planner_server's parameters for this nav2_smac_planner version."""
+    if lookup_table_size_is_limited(smac_planner_version):
+        return [configured_params, dict(LOOKUP_TABLE_SIZE_OVERRIDE)]
+    return [configured_params]
 
 
 def generate_launch_description():
@@ -68,15 +171,29 @@ def generate_launch_description():
     # Create our own temporary YAML files that include substitutions
     param_substitutions = {'autostart': autostart}
 
-    configured_params = ParameterFile(
-        RewrittenYaml(
-            source_file=params_file,
-            root_key=namespace,
-            param_rewrites=param_substitutions,
-            convert_types=True,
-        ),
-        allow_substs=True,
+    rewritten_params = RewrittenYaml(
+        source_file=params_file,
+        root_key=namespace,
+        param_rewrites=param_substitutions,
+        convert_types=True,
     )
+    configured_params = ParameterFile(rewritten_params, allow_substs=True)
+
+    # The parameter file, and after it on nav2_smac_planner 1.5 and later
+    # GridBased.lookup_table_size 20.0 (see LOOKUP_TABLE_SIZE_OVERRIDE).
+    planner_params = planner_server_params(
+        installed_nav2_smac_planner_version(), configured_params)
+
+    # Before the parameter file: launch_ros passes each entry as its own
+    # --params-file, in this order, and a later file wins over an earlier
+    # one for the same parameter. So the shipped file, which has no
+    # error_code_names, gets the legacy names on Nav2 older than 1.4, and a
+    # params_file that sets its own error_code_names keeps them when its
+    # list is keyed by the node's name. (A list keyed '/**' loses when the
+    # namespace is empty: SetParameter's -p use_sim_time makes '/**' the
+    # first entry, so this list wins. BEN's namespace is 'ben'.)
+    bt_task_navigator_params = legacy_error_code_params(
+        installed_nav2_bt_navigator_version()) + [configured_params]
 
     stdout_linebuf_envvar = SetEnvironmentVariable(
         'RCUTILS_LOGGING_BUFFERED_STREAM', '1'
@@ -163,7 +280,7 @@ def generate_launch_description():
                 output='screen',
                 respawn=use_respawn,
                 respawn_delay=2.0,
-                parameters=[configured_params],
+                parameters=planner_params,
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings,
                 namespace="",
@@ -230,7 +347,7 @@ def generate_launch_description():
                 output='screen',
                 respawn=use_respawn,
                 respawn_delay=2.0,
-                parameters=[configured_params],
+                parameters=bt_task_navigator_params,
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings,
                 namespace="",
@@ -327,7 +444,7 @@ def generate_launch_description():
                         package='nav2_planner',
                         plugin='nav2_planner::PlannerServer',
                         name='planner_server',
-                        parameters=[configured_params],
+                        parameters=planner_params,
                         remappings=remappings,
                     ),
                     ComposableNode(
@@ -348,7 +465,7 @@ def generate_launch_description():
                         package='nav2_bt_navigator',
                         plugin='nav2_bt_navigator::BtNavigator',
                         name='bt_task_navigator',
-                        parameters=[configured_params],
+                        parameters=bt_task_navigator_params,
                         remappings=remappings,
                     ),
                     ComposableNode(

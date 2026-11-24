@@ -1,0 +1,184 @@
+# CI for ben_project11. The same file is carried on the rolling and jazzy
+# branches; pushes and pull requests to either run it. Modelled on
+# rolker/ben_description's workflow.
+#
+# One job, Jazzy, with Nav2 from the released Jazzy binaries. rosdep is
+# given only the paths of the build step's --packages-up-to closure, taken
+# from colcon list, with no -r: a key that does not install fails the job.
+# The only keys skipped are the project's own packages, which are not in
+# rosdistro and which nothing here needs: the tests start no node of
+# theirs and load no plugin of theirs (see SKIP_KEYS below).
+#
+# The test step does not source install/setup.bash: the tests find the
+# installed launch and parameter files through the install prefix CMake
+# passes to them (BEN_PROJECT11_INSTALL_PREFIX), and put that prefix first
+# on AMENT_PREFIX_PATH themselves while they run; Nav2 comes from
+# /opt/ros/jazzy. test_launch_and_config is static (launch descriptions are
+# generated, not launched). test_bt_navigator_params starts the stock
+# bt_navigator with BEN's bt_task_navigator parameters and configures it;
+# on Jazzy it should read back error_code_names = compute_path_error_code
+# follow_path_error_code hover_error_code.
+#
+# There is no Rolling job. Two of the three launch files need nav2_common
+# and nav2_bringup to load, and test_bt_navigator_params needs
+# nav2_bt_navigator; Nav2 has no Rolling release, and no CI job builds
+# Nav2 from source. A Rolling job could run only the parameter-file and
+# manifest checks, which are plain Python and the same on both distros.
+# The Rolling checks are run by hand and recorded in the pull request.
+
+name: CI
+
+on:
+  push:
+    branches: [rolling, jazzy]
+  pull_request:
+    branches: [rolling, jazzy]
+
+env:
+  # Project packages named in package.xml that are not released (no
+  # rosdep rule on any distro); each comes from source in the vehicle
+  # workspaces:
+  #   ben_description            rolker/ben_description (launch)
+  #   marine_autonomy            rolker/unh_marine_autonomy (launch)
+  #   manda_coverage             rolker/manda_coverage (launch)
+  #   mru_transform              rolker/mru_transform (launch)
+  #   s57_grids                  rolker/s57_tools (launch)
+  #   s57_layer                  rolker/s57_tools (costmap plugin)
+  #   marine_nav_bt_task_navigator      rolker/unh_marine_navigation (navigator plugin)
+  #   marine_nav_crabbing_path_follower rolker/unh_marine_navigation (controller plugin)
+  #   marine_nav_behaviors              rolker/unh_marine_navigation (behaviour plugin)
+  #   marine_nav_behavior_tree          rolker/unh_marine_navigation (BT plugin library)
+  SKIP_KEYS: >-
+    ben_description marine_autonomy manda_coverage mru_transform
+    s57_grids s57_layer marine_nav_bt_task_navigator
+    marine_nav_crabbing_path_follower marine_nav_behaviors
+    marine_nav_behavior_tree
+
+jobs:
+  jazzy:
+    name: build-and-test (jazzy)
+    # The container supplies the distro's OS; the host runner only runs it.
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    container:
+      image: ros:jazzy-ros-core
+
+    steps:
+      - name: Update apt
+        run: apt-get update
+
+      - name: Install ros dev tools
+        run: DEBIAN_FRONTEND=noninteractive apt-get -y install ros-dev-tools
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Init rosdep
+        run: |
+          if [ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]; then
+            rosdep init
+          fi
+
+      - name: Update rosdep
+        run: rosdep update
+
+      - name: Create workspace
+        run: mkdir -p ../ws/src && ln -s "$GITHUB_WORKSPACE" ../ws/src/ben_project11
+
+      - name: Install ROS dependencies
+        working-directory: ../ws
+        shell: bash
+        run: |
+          set -euo pipefail
+          paths="$(colcon list --base-paths src --paths-only --packages-up-to ben_project11)"
+          if [ -z "$paths" ]; then
+            echo "colcon list returned no package paths" >&2
+            exit 1
+          fi
+          echo "$paths"
+          # shellcheck disable=SC2086
+          DEBIAN_FRONTEND=noninteractive rosdep install --ignore-src -y \
+            --from-paths $paths --skip-keys "$SKIP_KEYS"
+
+      - name: Build
+        id: build
+        working-directory: ../ws
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          set -eo pipefail
+          echo "nav2_bt_navigator $(sed -n 's:.*<version>\(.*\)</version>.*:\1:p' /opt/ros/jazzy/share/nav2_bt_navigator/package.xml)"
+          colcon build --packages-up-to ben_project11 --event-handlers console_cohesion+
+
+      - name: Test
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: ../ws
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          set -eo pipefail
+          colcon test --packages-select ben_project11 \
+            --event-handlers console_direct+ --return-code-on-test-failure
+
+      - name: Navigator log
+        # What the Jazzy bt_navigator logged in test_bt_navigator_params:
+        # the file it writes in its pytest tmp_path, found by its name, not
+        # by pytest's (truncated) directory names.
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          found=0
+          while IFS= read -r -d '' log; do
+            found=1
+            echo "== $log"
+            cat "$log"
+          done < <(find "${TMPDIR:-/tmp}" /tmp -path '*pytest-of-*' \
+                     -name bt_navigator.log -print0 2>/dev/null | sort -zu)
+          if [ "$found" -eq 0 ]; then
+            echo "no bt_navigator log found"
+          fi
+
+      - name: Test results
+        # Fails on a failed test, and when fewer (or more) results are
+        # found than expected, so a test that silently stops running or
+        # writing results is caught (colcon test-result alone passes with
+        # none). The expected count is derived here, not written down: every
+        # pytest case collected from test/ plus one CTest entry per test
+        # CMakeLists.txt registers. Adding a test changes both sides.
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: ../ws
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          set -eo pipefail
+          colcon test-result --verbose | tee test-result.txt
+          # pytest's own "N tests collected" line, not a count of output
+          # lines; with no tests pytest exits 5, which is caught here too.
+          status=0
+          collect="$(BEN_PROJECT11_INSTALL_PREFIX="$PWD/install/ben_project11" \
+            PYTHONDONTWRITEBYTECODE=1 python3 -m pytest --collect-only -q \
+            -p no:cacheprovider src/ben_project11/test 2>&1)" || status=$?
+          collected="$(printf '%s\n' "$collect" \
+            | sed -n 's/^\([0-9][0-9]*\) tests\{0,1\} collected.*/\1/p' | tail -n 1)"
+          if [ "$status" -ne 0 ] || [ -z "$collected" ] || [ "$collected" -eq 0 ]; then
+            printf '%s\n' "$collect" | tail -n 20
+            echo "pytest collected no tests, or its count could not be read" \
+              "(exit $status)" >&2
+            exit 1
+          fi
+          registered="$(ctest --test-dir build/ben_project11 -N \
+            | sed -n 's/^Total Tests: *//p')"
+          case "$registered" in
+            ''|*[!0-9]*)
+              echo "the CTest count could not be read: '$registered'" >&2
+              exit 1 ;;
+          esac
+          ran="$(sed -n 's/^Summary: \([0-9]*\) tests.*/\1/p' test-result.txt)"
+          expected=$((collected + registered))
+          echo "results: ${ran:-none}; expected: $expected" \
+            "($collected pytest cases + $registered CTest entries)"
+          if [ "${ran:-0}" -ne "$expected" ] || [ "$expected" -lt 3 ]; then
+            echo "test result count is not the expected one" >&2
+            exit 1
+          fi
