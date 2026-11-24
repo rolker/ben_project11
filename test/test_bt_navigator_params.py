@@ -2,15 +2,19 @@
 
 The parameters are built the way the launch files build them: the
 installed config/nav2_params.yaml goes through nav2_bringup_launch.py's own
-ReplaceString (namespace "ben", use_namespace true), then through the
-parameter list of the bt_task_navigator LifecycleNode in
-navigation_launch.py (for Nav2 older than 1.4, the error_code_names that
-legacy_error_code_params adds, then its RewrittenYaml file), passed to
-the node in that order. The BEN
+ReplaceString and PushROSNamespace (namespace "ben", use_namespace true),
+then launch_ros itself turns the parameter list of the bt_task_navigator
+LifecycleNode in navigation_launch.py into its --params-file arguments
+(for Nav2 older than 1.4, the file it writes from the error_code_names
+that legacy_error_code_params adds, keyed /ben/bt_task_navigator; then the
+RewrittenYaml file), and the node gets those files in that order. That is
+done through Node._perform_substitutions(), the step launch_ros runs when
+it executes a node; it is not public API, but launch_ros's own subclasses
+call it, and if it changes this test fails rather than passes. The BEN
 navigator plugin and behaviour-tree library are replaced by the stock
-navigate_to_pose navigator, since they are not available here; the
-error-code handling under test is in Nav2's BtActionServer, which BEN's
-navigator uses unchanged.
+navigate_to_pose navigator in the RewrittenYaml file, since they are not
+available here; the error-code handling under test is in Nav2's
+BtActionServer, which BEN's navigator uses unchanged.
 
 The node is started as /ben/bt_task_navigator, configured through its
 lifecycle service, and its error-code parameters are read back:
@@ -40,10 +44,10 @@ from launch.actions import GroupAction, IncludeLaunchDescription
 from launch.launch_description_sources.python_launch_file_utilities import (
     load_python_launch_file_as_module,
 )
+from launch.substitutions import TextSubstitution
 from launch.utilities import normalize_to_list_of_substitutions, perform_substitutions
 from launch_ros.actions import Node as LaunchNode
-from launch_ros.descriptions import ParameterFile
-from launch_ros.utilities import evaluate_parameters
+from launch_ros.actions import PushROSNamespace
 from lifecycle_msgs.msg import State, Transition
 from lifecycle_msgs.srv import ChangeState, GetState
 from rcl_interfaces.msg import ParameterType
@@ -68,11 +72,19 @@ def walk(entities):
             yield from walk(entity.get_sub_entities())
 
 
-def placeholder_substituted_params_file(context):
-    """Return the params_file that nav2_bringup_launch.py hands to navigation_launch.py."""
+def bringup_arguments(context):
+    """Apply nav2_bringup_launch.py to the context as it does before its include.
+
+    Return the params_file it hands to navigation_launch.py (its
+    ReplaceString), and push its namespace (PushROSNamespace) onto the context.
+    """
     module = load_python_launch_file_as_module(str(SHARE / 'launch' / 'nav2_bringup_launch.py'))
-    includes = [e for e in walk(module.generate_launch_description().entities)
-                if isinstance(e, IncludeLaunchDescription)]
+    entities = list(walk(module.generate_launch_description().entities))
+    pushes = [e for e in entities if isinstance(e, PushROSNamespace)]
+    assert len(pushes) == 1, pushes
+    pushes[0].visit(context)
+    assert context.launch_configurations.get('ros_namespace') == f'/{NAMESPACE}'
+    includes = [e for e in entities if isinstance(e, IncludeLaunchDescription)]
     assert len(includes) == 1, includes
     arguments = {perform_substitutions(context, normalize_to_list_of_substitutions(k)): v
                  for k, v in includes[0].launch_arguments}
@@ -80,32 +92,56 @@ def placeholder_substituted_params_file(context):
         context, normalize_to_list_of_substitutions(arguments['params_file']))
 
 
-def bt_task_navigator_parameters(context):
-    """Evaluate the bt_task_navigator LifecycleNode's parameters in navigation_launch.py."""
+def bt_task_navigator_params_files(context, out_dir):
+    """Copy the --params-file files launch_ros gives bt_task_navigator, in order.
+
+    The file holding the bt_task_navigator block (the RewrittenYaml one) is
+    copied with the stock navigator in place of BEN's; the others are
+    copied as launch_ros wrote them. Return the installed nav2_bt_navigator
+    version, whether it is older than 1.4, and the copies.
+    """
     module = load_python_launch_file_as_module(str(SHARE / 'launch' / 'navigation_launch.py'))
     nodes = [e for e in walk(module.generate_launch_description().entities)
              if isinstance(e, LaunchNode) and e._Node__node_name == NODE]
     assert len(nodes) == 1, nodes
-    parameters = nodes[0]._Node__parameters
-    assert isinstance(parameters[-1], ParameterFile)
-    evaluated = evaluate_parameters(context, parameters)
-    # The ParameterFile deletes its evaluated file when it is collected: read it now.
-    return (module.installed_nav2_bt_navigator_version(),
-            evaluated[:-1], pathlib.Path(evaluated[-1]).read_text())
+    node = nodes[0]
+    node._perform_substitutions(context)
+    assert node.node_name == f'/{NAMESPACE}/{NODE}', node.node_name
+    arguments = [perform_substitutions(context, item)
+                 if all(isinstance(s, TextSubstitution) for s in item) else None
+                 for item in node.cmd]
+    paths = [pathlib.Path(arguments[i + 1])
+             for i, argument in enumerate(arguments) if argument == '--params-file']
+
+    version = module.installed_nav2_bt_navigator_version()
+    legacy = module.nav2_version_tuple(version) < (1, 4)
+    assert len(paths) == len(module.legacy_error_code_params(version)) + 1, paths
+    # Read the files while node (and the ParameterFile that owns the
+    # evaluated file) is alive. The ones before the last are copied as
+    # written (launch_ros writes lists as !!python/tuple, which rcl reads
+    # and yaml.safe_load does not).
+    copies = []
+    for index, path in enumerate(paths):
+        text = path.read_text()
+        if index == len(paths) - 1:
+            data = yaml.safe_load(text)
+            stock_navigator(data[NAMESPACE][NODE]['ros__parameters'])
+            text = yaml.safe_dump(data)
+        else:
+            assert f'/{NAMESPACE}/{NODE}' in text, text
+        copy = out_dir / f'params_{index}.yaml'
+        copy.write_text(text)
+        copies.append(copy)
+    return version, legacy, copies
 
 
-def stock_navigator_file(evaluated_text, out_dir):
+def stock_navigator(block):
     """Replace BEN's navigator plugin and BT library by the stock navigate_to_pose."""
-    data = yaml.safe_load(evaluated_text)
-    block = data[NAMESPACE][NODE]['ros__parameters']
     for key in block['navigators']:
         block.pop(key, None)
     block['navigators'] = ['navigate_to_pose']
     block['navigate_to_pose'] = {'plugin': 'nav2_bt_navigator::NavigateToPoseNavigator'}
     block.pop('plugin_lib_names', None)
-    path = out_dir / 'bt_task_navigator_stock.yaml'
-    path.write_text(yaml.safe_dump({NAMESPACE: {NODE: {'ros__parameters': block}}}))
-    return path
 
 
 def call(node, client, request, process, log_path):
@@ -141,20 +177,13 @@ def test_bt_task_navigator_configures(tmp_path, monkeypatch):
         'params_file': str(SHARE / 'config' / 'nav2_params.yaml'),
         'autostart': 'true',
     })
-    replaced = placeholder_substituted_params_file(context)
+    replaced = bringup_arguments(context)
     assert '<robot_namespace>' not in pathlib.Path(replaced).read_text()
     context.launch_configurations['params_file'] = replaced
 
-    version, extras, evaluated_text = bt_task_navigator_parameters(context)
-    # In the launch file's order: the extras, then the parameter file.
-    files = []
-    for index, extra in enumerate(extras):
-        path = tmp_path / f'extra_{index}.yaml'
-        path.write_text(yaml.safe_dump({'/**': {'ros__parameters': dict(
-            (k, list(v) if isinstance(v, tuple) else v) for k, v in extra.items())}}))
-        files.append(path)
-    files.append(stock_navigator_file(evaluated_text, tmp_path))
-    legacy = tuple(int(p) for p in version.split('.')[:2]) < (1, 4)
+    copies_dir = tmp_path / 'params'
+    copies_dir.mkdir()
+    version, legacy, files = bt_task_navigator_params_files(context, copies_dir)
 
     executable = pathlib.Path(get_package_prefix('nav2_bt_navigator')) / 'lib' / \
         'nav2_bt_navigator' / 'bt_navigator'
