@@ -15,6 +15,13 @@ if(BUILD_TESTING)
     ENV BEN_PROJECT11_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
     TIMEOUT 120
   )
+  # Starts the stock bt_navigator with BEN's bt_task_navigator parameters
+  # and configures it; isolated so that it does not meet other tests' nodes.
+  find_package(ament_cmake_ros REQUIRED)
+  ament_add_ros_isolated_pytest_test(test_bt_navigator_params test/test_bt_navigator_params.py
+    ENV BEN_PROJECT11_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
+    TIMEOUT 120
+  )
 endif()
 
 ament_package()
