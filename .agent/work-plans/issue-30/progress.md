@@ -544,3 +544,13 @@ Read: the Local Review (Pre-Push) round 3 at `6152ab4`, approved, one suggestion
 - "Nothing was run on Jazzy locally ...; this pull request's CI run is the first Jazzy evidence" — now true of a finished run; add: "CI run 45445732805 on Jazzy (Nav2 1.3.14) passed: strict rosdep, 56 tests, and the stock `bt_navigator` configured with the launch-built files and read back the old three `error_code_names`, with no warning."
 - "On Jazzy the navigator receives the same three names ... Established by reading ...; by three reviews" — add "and by the Jazzy CI navigator test".
 - "Nothing here shows ... composable path ..." stays accurate. Optionally note that the CI job installs Gazebo packages via `nav2_bringup`'s dependencies (about 520 packages in one rosdep step).
+
+## Checkpoint
+**Status**: complete
+**When**: 2026-11-24 12:17 -05:00
+**By**: Claude Code Agent (claude-fable-5-2)
+**Decided-by**: owner
+**After**: merge
+**Decision**: merge
+
+The owner, 2026-11-24, asked whether to merge pull request 31 with the decision summary in the dialog: "Merge, then prepare the backport (Recommended)". The backport of the 19 code and CI commits to `jazzy` is prepared by hand after the merge and brought to him with its CI result before it is merged.
