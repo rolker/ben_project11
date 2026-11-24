@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import numbers
 import os
+import tempfile
 import xml.etree.ElementTree as ET
 
 from ament_index_python.packages import get_package_share_directory
@@ -22,12 +24,16 @@ from launch.actions import DeclareLaunchArgument, GroupAction, SetEnvironmentVar
 from launch.conditions import IfCondition
 from launch.substitutions import PathJoinSubstitution
 from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch import Substitution
+from launch.logging import get_logger
+from launch.utilities import normalize_to_list_of_substitutions, perform_substitutions
 from launch_ros.actions import LoadComposableNodes, SetParameter
 from launch_ros.actions import Node
 from launch_ros.actions import LifecycleNode
 from launch_ros.descriptions import ComposableNode, ParameterFile
 from launch_ros.substitutions import FindPackageShare
 from nav2_common.launch import RewrittenYaml
+import yaml
 
 
 # Error codes of bt_task_navigator. config/nav2_params.yaml gives
@@ -46,7 +52,18 @@ LEGACY_ERROR_CODE_NAMES = [
 ]
 
 
-def nav2_version_tuple(version):
+# What each installed Nav2 package's version decides, for the error messages.
+VERSION_PURPOSE = {
+    'nav2_bt_navigator':
+        'it decides whether bt_task_navigator gets error_code_names '
+        '(Nav2 older than 1.4) or not',
+    'nav2_smac_planner':
+        'it decides whether planner_server gets lookup_table_size lowered to '
+        '20 (nav2_smac_planner 1.5 and later) or not',
+}
+
+
+def nav2_version_tuple(version, package='nav2_bt_navigator'):
     """Return a version string such as '1.3.14' as a tuple of integers."""
     try:
         parts = tuple(int(part) for part in version.strip().split('.'))
@@ -54,9 +71,8 @@ def nav2_version_tuple(version):
         parts = ()
     if len(parts) < 2:
         raise RuntimeError(
-            f'ben_project11: cannot parse the nav2_bt_navigator version {version!r}; '
-            'it decides whether bt_task_navigator gets error_code_names '
-            '(Nav2 older than 1.4) or not')
+            f'ben_project11: cannot parse the {package} version {version!r}; '
+            f'{VERSION_PURPOSE[package]}')
     return parts
 
 
@@ -67,22 +83,142 @@ def legacy_error_code_params(nav2_version):
     return []
 
 
-def installed_nav2_bt_navigator_version():
-    """Return the <version> of the installed nav2_bt_navigator's package.xml."""
+def installed_version(package):
+    """Return the <version> of an installed package's package.xml."""
     try:
-        share = get_package_share_directory('nav2_bt_navigator')
+        share = get_package_share_directory(package)
         version = ET.parse(os.path.join(share, 'package.xml')).getroot().findtext('version')
     except Exception as error:
         raise RuntimeError(
-            'ben_project11: cannot read the version of the installed nav2_bt_navigator '
-            f'({error}); it decides whether bt_task_navigator gets error_code_names '
-            '(Nav2 older than 1.4) or not') from error
+            f'ben_project11: cannot read the version of the installed {package} '
+            f'({error}); {VERSION_PURPOSE[package]}') from error
     if not version:
         raise RuntimeError(
-            'ben_project11: the installed nav2_bt_navigator package.xml has no <version>; '
-            'it decides whether bt_task_navigator gets error_code_names '
-            '(Nav2 older than 1.4) or not')
+            f'ben_project11: the installed {package} package.xml has no <version>; '
+            f'{VERSION_PURPOSE[package]}')
     return version
+
+
+def installed_nav2_bt_navigator_version():
+    """Return the <version> of the installed nav2_bt_navigator's package.xml."""
+    return installed_version('nav2_bt_navigator')
+
+
+def installed_nav2_smac_planner_version():
+    """Return the <version> of the installed nav2_smac_planner's package.xml."""
+    return installed_version('nav2_smac_planner')
+
+
+# lookup_table_size of SmacPlannerHybrid. Newer Nav2 refuses a value above
+# 20 (m) when the planner is configured ("lookup_table_size must be in
+# [0.0, 20.0]"), so planner_server does not configure and bring-up fails.
+# config/nav2_params.yaml keeps 55.0, which Jazzy reads unchanged; where
+# Nav2 has the limit, planner_server gets a copy of the parameter file in
+# which each SmacPlannerHybrid lookup_table_size above 20 is lowered to 20.
+# A value of 20 or less, or none (Nav2's default is 20), is left as it is,
+# so a custom params_file is never raised and a legal value never lowered.
+#
+# Where the limit is: Nav2 d7bf2ac0 (#6566) on main and 221cdb28 (#6595)
+# on lyrical; not on jazzy (1.3.x) or kilted (1.4.x). nav2_smac_planner's
+# package.xml does not tell an install with it from one without: main is
+# 1.5.0 before and after d7bf2ac0, and lyrical 1.5.2 before and after
+# 221cdb28 (1.5.3, the next release, has it). So the test is the safe
+# side, nav2_smac_planner 1.5 and later: lowering to 20 where the limit is
+# not (Lyrical 1.5.0 to 1.5.2, main before d7bf2ac0) only shrinks the
+# heuristic table; leaving 55 where it is stops the planner server. If
+# Nav2 ever puts the limit on jazzy or kilted, this test will not see it.
+LOOKUP_TABLE_SIZE_LIMIT = 20.0
+SMAC_HYBRID_PLUGINS = (
+    'nav2_smac_planner::SmacPlannerHybrid',
+    'nav2_smac_planner/SmacPlannerHybrid',
+)
+
+
+def lookup_table_size_is_limited(smac_planner_version):
+    """Return whether this nav2_smac_planner refuses lookup_table_size above 20."""
+    return nav2_version_tuple(smac_planner_version, 'nav2_smac_planner') >= (1, 5)
+
+
+def cap_lookup_table_size(data):
+    """Lower each SmacPlannerHybrid lookup_table_size above the limit to it.
+
+    data is a parsed parameter file; it is changed in place. The planners
+    are those named in planner_plugins of any ros__parameters block, with
+    their settings nested (GridBased: {lookup_table_size: ...}) or dotted
+    (GridBased.lookup_table_size). Return [(planner, old value)] for each
+    value lowered.
+    """
+    lowered = []
+
+    def setting(params, planner, key):
+        nested = params.get(planner)
+        if isinstance(nested, dict) and key in nested:
+            return nested, key
+        if f'{planner}.{key}' in params:
+            return params, f'{planner}.{key}'
+        return None, None
+
+    def visit(block):
+        if not isinstance(block, dict):
+            return
+        params = block.get('ros__parameters')
+        if isinstance(params, dict) and isinstance(params.get('planner_plugins'), list):
+            for planner in params['planner_plugins']:
+                holder, key = setting(params, planner, 'plugin')
+                if holder is None or holder[key] not in SMAC_HYBRID_PLUGINS:
+                    continue
+                holder, key = setting(params, planner, 'lookup_table_size')
+                if holder is None:
+                    continue
+                value = holder[key]
+                if isinstance(value, numbers.Real) and not isinstance(value, bool) and \
+                        value > LOOKUP_TABLE_SIZE_LIMIT:
+                    holder[key] = LOOKUP_TABLE_SIZE_LIMIT
+                    lowered.append((planner, value))
+        for value in block.values():
+            visit(value)
+
+    visit(data)
+    return lowered
+
+
+class LookupTableSizeCapped(Substitution):
+    """A parameter file with cap_lookup_table_size applied.
+
+    Evaluates to the source file's path when nothing is above the limit,
+    else to a copy with the values lowered.
+    """
+
+    def __init__(self, source_file):
+        super().__init__()
+        self.__source_file = normalize_to_list_of_substitutions(source_file)
+
+    def describe(self):
+        return 'LookupTableSizeCapped({})'.format(
+            ' + '.join(s.describe() for s in self.__source_file))
+
+    def perform(self, context):
+        path = perform_substitutions(context, self.__source_file)
+        with open(path) as source:
+            data = yaml.safe_load(source)
+        lowered = cap_lookup_table_size(data)
+        if not lowered:
+            return path
+        for planner, value in lowered:
+            get_logger('ben_project11.navigation_launch').warning(
+                f'planner_server: {planner}.lookup_table_size {value} lowered to '
+                f'{LOOKUP_TABLE_SIZE_LIMIT} (this nav2_smac_planner refuses more)')
+        with tempfile.NamedTemporaryFile(
+                mode='w', prefix='ben_planner_params_', delete=False) as copy:
+            yaml.safe_dump(data, copy)
+            return copy.name
+
+
+def planner_server_params(smac_planner_version, rewritten_params, configured_params):
+    """Return planner_server's parameters for this nav2_smac_planner version."""
+    if lookup_table_size_is_limited(smac_planner_version):
+        return [ParameterFile(LookupTableSizeCapped(rewritten_params), allow_substs=True)]
+    return [configured_params]
 
 
 def generate_launch_description():
@@ -124,15 +260,19 @@ def generate_launch_description():
     # Create our own temporary YAML files that include substitutions
     param_substitutions = {'autostart': autostart}
 
-    configured_params = ParameterFile(
-        RewrittenYaml(
-            source_file=params_file,
-            root_key=namespace,
-            param_rewrites=param_substitutions,
-            convert_types=True,
-        ),
-        allow_substs=True,
+    rewritten_params = RewrittenYaml(
+        source_file=params_file,
+        root_key=namespace,
+        param_rewrites=param_substitutions,
+        convert_types=True,
     )
+    configured_params = ParameterFile(rewritten_params, allow_substs=True)
+
+    # The parameter file, or on nav2_smac_planner 1.5 and later a copy with
+    # lookup_table_size lowered where it is above 20 (see
+    # LookupTableSizeCapped).
+    planner_params = planner_server_params(
+        installed_nav2_smac_planner_version(), rewritten_params, configured_params)
 
     # Before the parameter file: launch_ros passes each entry as its own
     # --params-file, in this order, and a later file wins over an earlier
@@ -227,7 +367,7 @@ def generate_launch_description():
                 output='screen',
                 respawn=use_respawn,
                 respawn_delay=2.0,
-                parameters=[configured_params],
+                parameters=planner_params,
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings,
                 namespace="",
@@ -391,7 +531,7 @@ def generate_launch_description():
                         package='nav2_planner',
                         plugin='nav2_planner::PlannerServer',
                         name='planner_server',
-                        parameters=[configured_params],
+                        parameters=planner_params,
                         remappings=remappings,
                     ),
                     ComposableNode(
