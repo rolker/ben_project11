@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import xml.etree.ElementTree as ET
 
 from ament_index_python.packages import get_package_share_directory
 
@@ -27,6 +28,59 @@ from launch_ros.actions import LifecycleNode
 from launch_ros.descriptions import ComposableNode, ParameterFile
 from launch_ros.substitutions import FindPackageShare
 from nav2_common.launch import RewrittenYaml
+
+
+# Error codes of bt_task_navigator. config/nav2_params.yaml gives
+# error_code_name_prefixes (Nav2 1.4 and later; Kilted, Lyrical, Rolling),
+# which refuse error_code_names at configure. Nav2 older than 1.4 (Jazzy)
+# reads only error_code_names, and without it drops hover_error_code; it
+# is given here for those versions only. Keep this list equal to the
+# prefixes in the parameter file with '_error_code' appended
+# (test/test_launch_and_config.py checks it).
+LEGACY_ERROR_CODE_NAMES = [
+    'compute_path_error_code',
+    'follow_path_error_code',
+    'hover_error_code',
+]
+
+
+def nav2_version_tuple(version):
+    """Return a version string such as '1.3.14' as a tuple of integers."""
+    try:
+        parts = tuple(int(part) for part in version.strip().split('.'))
+    except (AttributeError, ValueError):
+        parts = ()
+    if len(parts) < 2:
+        raise RuntimeError(
+            f'ben_project11: cannot parse the nav2_bt_navigator version {version!r}; '
+            'it decides whether bt_task_navigator gets error_code_names '
+            '(Nav2 older than 1.4) or not')
+    return parts
+
+
+def legacy_error_code_params(nav2_version):
+    """Return the extra bt_task_navigator parameters for this Nav2 version."""
+    if nav2_version_tuple(nav2_version) < (1, 4):
+        return [{'error_code_names': list(LEGACY_ERROR_CODE_NAMES)}]
+    return []
+
+
+def installed_nav2_bt_navigator_version():
+    """Return the <version> of the installed nav2_bt_navigator's package.xml."""
+    try:
+        share = get_package_share_directory('nav2_bt_navigator')
+        version = ET.parse(os.path.join(share, 'package.xml')).getroot().findtext('version')
+    except Exception as error:
+        raise RuntimeError(
+            'ben_project11: cannot read the version of the installed nav2_bt_navigator '
+            f'({error}); it decides whether bt_task_navigator gets error_code_names '
+            '(Nav2 older than 1.4) or not') from error
+    if not version:
+        raise RuntimeError(
+            'ben_project11: the installed nav2_bt_navigator package.xml has no <version>; '
+            'it decides whether bt_task_navigator gets error_code_names '
+            '(Nav2 older than 1.4) or not')
+    return version
 
 
 def generate_launch_description():
@@ -77,6 +131,10 @@ def generate_launch_description():
         ),
         allow_substs=True,
     )
+
+    # After the parameter file, so it adds to it (see legacy_error_code_params).
+    bt_task_navigator_params = [configured_params] + legacy_error_code_params(
+        installed_nav2_bt_navigator_version())
 
     stdout_linebuf_envvar = SetEnvironmentVariable(
         'RCUTILS_LOGGING_BUFFERED_STREAM', '1'
@@ -230,7 +288,7 @@ def generate_launch_description():
                 output='screen',
                 respawn=use_respawn,
                 respawn_delay=2.0,
-                parameters=[configured_params],
+                parameters=bt_task_navigator_params,
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings,
                 namespace="",
@@ -348,7 +406,7 @@ def generate_launch_description():
                         package='nav2_bt_navigator',
                         plugin='nav2_bt_navigator::BtNavigator',
                         name='bt_task_navigator',
-                        parameters=[configured_params],
+                        parameters=bt_task_navigator_params,
                         remappings=remappings,
                     ),
                     ComposableNode(
