@@ -381,3 +381,45 @@ Fix round 1. Nothing pushed or posted. Rolling only (Nav2 underlay built from `d
 - Composable precedence (container's parameter overrides, later wins) is by reading launch_ros only; no container was started.
 - The CI `Install ROS dependencies`, `Build` and `Test` steps were not re-rehearsed beyond the local build and test above.
 - colcon's test runs used pytest's default temporary root (`/tmp/pytest-of-<user>`, pruned by pytest to its last three); my own scratch went to the session scratchpad and is removed.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-11-24 11:53 -05:00
+**By**: Claude Code Agent (claude-opus-5-5)
+**Verdict**: approved
+
+**Branch**: feature/issue-30 at `33fb08f` (code head `7da4b06`; branch head `ac23ea9` adds only the implementation record)
+**Base**: origin/rolling
+**Depth**: Standard (reason: whole-branch classification as round 1, a launch file that reaches a vehicle and a CI workflow; this round reviews `301536c..33fb08f`, eight code commits, +569 -142)
+**Must-fix**: 0 | **Suggestions**: 4
+**Round**: 2 | **Ship**: recommended — no must-fix findings; remaining suggestions can be applied or tracked
+
+Reviewers: static analysis (ament_flake8: `navigation_launch.py` 19 warnings vs 20 on `rolling`, tests clean; ament_pep257: D213/D401 docstring style only; ament_xmllint clean), governance and plan drift (lead), a fresh Claude adversarial subagent (completed), cross-model Gemini and Codex (both `EXIT=0`, completed). Codex rated the cap's custom-file misses must-fix and Gemini rated the `action_server_result_timeout` removal must-fix; both downgraded or rejected below.
+
+Hygiene: no `.agent/` file in the eight code commits; each code commit's message ends "Backport to jazzy."; one fix per commit.
+
+### Jazzy vehicle behaviour, per new commit (read against Nav2 `origin/jazzy` and launch_ros/rclcpp/rcl `jazzy` from GitHub; Jazzy is not installed here)
+- `47f00d3` order: unchanged for the shipped file (the dict keyed `/ben/bt_task_navigator` gives the three names, which the file does not set). A custom file with its own node-keyed `error_code_names` (the shape RewrittenYaml writes under root key `ben`) keeps them, as before `c02aa8a`. rclcpp `resolve_parameter_overrides` and `parameter_map_from` apply the node-name entries of the merged `rcl_params_t` in order of first appearance, and the same name in a later file overwrites in place. Rolling bt_navigator, domain 173: with `-p use_sim_time` + dict + nested file the file wins; nested file + dict gives the dict. Composable (`to_parameters_list`, Jazzy): one batch per entry in list order, duplicates go to `NodeOptions` overrides, last wins, so the file wins in every key shape.
+- `3995d83` cap: on 1.3.14 `planner_server_params` returns `[configured_params]`, the very object every other node gets. New at load: reading `nav2_smac_planner`'s `package.xml` (an existing exec_depend; Jazzy 1.3.14 parses) and `import yaml` (`python3-yaml` resolves on jazzy/noble). The limit is absent on `origin/jazzy` and `origin/kilted` and present on `lyrical` and `main`; `nav2_smac_planner` is 1.5.0 before and after `d7bf2ac0` and 1.5.2 before and after `221cdb28`.
+- `239aae0`, `da1937f`, `3e0dbec`: tests only. Jazzy launch_ros has `Node._perform_substitutions` with the same body as Rolling, apart from Rolling's quoted-string representer in `_create_params_file_from_dict`. `_Node__node_name` and `cmd` are also there.
+- `0a5dcac`: CI only. `55c2a1a`: comments only, accurate against the branches. `7da4b06`: import order only.
+
+### Checks run
+- `colcon test` (`test.sh --parallel-workers 1 --packages-select ben_project11`, domain 174 checked empty): `Summary: 62 tests, 0 errors, 0 failures, 0 skipped`. The CI count snippet gives 60 collected + 2 CTest = 62; collection also works with only the ROS and underlay setup sourced, as in CI.
+- Navigator test: 10 separate runs, 10 passed (0.44 to 0.92 s); no navigator left running.
+- Capped-file fidelity: ReplaceString → RewrittenYaml (root `ben`) → `LookupTableSizeCapped`, compared scalar by scalar (path, YAML tag, value, quoted or not) and by Python type. On the shipped file, 241 scalars match except `planner_server…GridBased.lookup_table_size` 55.0 → 20.0. On a stress copy with `1.0e-10`, `1e-10`, `True`, `"123"`, `'1.5'`, `y`, `"yes"`, `"on"`, `[]`, empty and null values, a mixed list, nested lists, `-0.0`, `.inf`, a long string, `\n` and `#`/`: ` strings, 264 scalars match with the same single difference.
+- Mutations on scratch installs: cap on 1.3 and later → 7 failures (`…not_limited_before_1_5[1.3.14]`, `…get_the_parameter_file_before_1_5[1.3.14]`, …); the cap also changing `expected_planner_frequency` → 6, among them `…capped_copy_from_1_5[None-20.0]` (whole-file comparison) and `…leaves_the_rest_alone`; the legacy dict after the file → `test_both_bt_task_navigators_get_the_legacy_parameters[1.3.14]`.
+
+### Rejected or below threshold
+- Gemini: removing `action_server_result_timeout` makes Jazzy default to 10 s. False: Jazzy declares 900.0 (`bt_action_server_impl.hpp:67-68`, `waypoint_follower.cpp:40`), and round 1 settled it.
+- Gemini: derive `error_code_names` from the file's prefixes. Out of this round; this is round 1's accepted design.
+- Gemini: `packages_named_by_parameter_files` and the test's deadline assert. Not reachable with the shipped files.
+
+### Findings
+- [ ] (suggestion) The cap's weight against the owner's option. The design is correct and inert on Jazzy, but it is about 110 code lines in a launch file that vehicles run. It still misses custom-file shapes: `planner_plugins` in one block with the `GridBased.*` settings in a `/**` block or another file, a `$(var …)` value (the cap runs before ParameterFile's substitution), a file with no `planner_plugins` (Nav2 defaults it to `[GridBased]`), and a non-string entry (TypeError). Each of those fails loudly at configure, as it does without the cap. The capped copy `ben_planner_params_*` is never removed, like RewrittenYaml's own file. A dict `{'GridBased.lookup_table_size': 20.0}` after the file, only on `nav2_smac_planner` 1.5 and later, gives "20 on new Nav2" in about 10 lines. It loses only the protection of a custom value below 20 on Rolling and Lyrical, which no vehicle runs. The host decides — `launch/navigation_launch.py:111-220`
+- [ ] (suggestion) The comment "a params_file that sets its own error_code_names keeps them" is true for node-keyed lists, not for a `/**`-keyed list when the namespace is empty: SetParameter's `-p use_sim_time` makes `/**` the first node entry, so the dict wins. Shown on Rolling: `-p` + dict + `/**` file gives the dict, and without `-p` the file wins. Vehicles (namespace `ben`) are not affected: there a `/**` key under the root key does not parse at all (`/ben// contains repeated forward slash`, already the case before this branch). Qualify the comment or leave it — `launch/navigation_launch.py:276-280`
+- [ ] (suggestion) CI count: `grep -c '::'` counts any collect-only line with `::`, including a warning text that names a C++ type. Take the count from the `N tests collected` line instead. With 0 cases, `grep -c` exits 1 under `pipefail` and the step stops without its message — `.github/workflows/ci.yml:157-159`
+- [ ] (suggestion) For the pull request, tell the owner three things. The 1.5 switch cannot tell Lyrical 1.5.0 to 1.5.2 or main before `d7bf2ac0` from builds that have the limit. If Nav2 backports the limit to jazzy, a vehicle's `planner_server` stops configuring after an apt upgrade (the code comment says so; the PR should too). `navigation_launch.py` now needs `nav2_smac_planner` installed to load, even with a params_file that uses no Smac planner — `launch/navigation_launch.py:120-128,274`
+
+### Round-1 items
+All eight are closed by `47f00d3`, `239aae0`, `0a5dcac`, `da1937f`, `3e0dbec`, `55c2a1a`, `33fb08f` and `3995d83`, each checked above. Only CI will show the Jazzy evidence: the reordered dict reaching the Jazzy navigator, `_perform_substitutions` on Jazzy's launch_ros, the 1.3.14 planner wiring, and the count step on the Jazzy image.
