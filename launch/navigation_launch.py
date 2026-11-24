@@ -34,7 +34,8 @@ from nav2_common.launch import RewrittenYaml
 # error_code_name_prefixes (Nav2 1.4 and later; Kilted, Lyrical, Rolling),
 # which refuse error_code_names at configure. Nav2 older than 1.4 (Jazzy)
 # reads only error_code_names, and without it drops hover_error_code; it
-# is given here for those versions only. Keep this list equal to the
+# is given here for those versions only, ahead of the parameter file so
+# that a file with its own error_code_names wins. Keep this list equal to the
 # prefixes in the parameter file with '_error_code' appended
 # (test/test_launch_and_config.py checks it).
 LEGACY_ERROR_CODE_NAMES = [
@@ -132,9 +133,13 @@ def generate_launch_description():
         allow_substs=True,
     )
 
-    # After the parameter file, so it adds to it (see legacy_error_code_params).
-    bt_task_navigator_params = [configured_params] + legacy_error_code_params(
-        installed_nav2_bt_navigator_version())
+    # Before the parameter file: launch_ros passes each entry as its own
+    # --params-file, in this order, and a later file wins over an earlier
+    # one for the same parameter. So the shipped file, which has no
+    # error_code_names, gets the legacy names on Nav2 older than 1.4, and a
+    # params_file that sets its own error_code_names keeps them.
+    bt_task_navigator_params = legacy_error_code_params(
+        installed_nav2_bt_navigator_version()) + [configured_params]
 
     stdout_linebuf_envvar = SetEnvironmentVariable(
         'RCUTILS_LOGGING_BUFFERED_STREAM', '1'

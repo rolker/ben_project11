@@ -16,7 +16,9 @@ What is checked:
   legacy_error_code_params gives the old error_code_names for Nav2 older
   than 1.4 and nothing from 1.4 on, an unparsable version is an error,
   and both bt_task_navigator descriptions (the lifecycle node and the
-  composable node) carry its result after the parameter file.
+  composable node) carry its result before the parameter file, so that
+  a parameter file's own error_code_names wins (launch_ros passes the
+  entries in order and the later one wins).
 
 The ROS 1 launch files (launch/*.launch) are not checked: they are XML for
 ROS 1, outside the launch/*.py set by their extension, and cannot run on
@@ -267,7 +269,8 @@ def test_both_bt_task_navigators_get_the_legacy_parameters(version):
     assert all(len(descriptions) == 1 for descriptions in found.values()), found
 
     for kind, [parameters] in found.items():
-        assert isinstance(parameters[0], ParameterFile), kind
-        rest = [{key: list(value) for key, value in p.items()}
-                for p in evaluate_parameters(context, parameters[1:])]
-        assert rest == expected, kind
+        # The parameter file last, the helper's result (if any) before it.
+        assert isinstance(parameters[-1], ParameterFile), kind
+        before = [{key: list(value) for key, value in p.items()}
+                  for p in evaluate_parameters(context, parameters[:-1])]
+        assert before == expected, kind

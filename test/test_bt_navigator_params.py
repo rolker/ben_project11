@@ -4,8 +4,9 @@ The parameters are built the way the launch files build them: the
 installed config/nav2_params.yaml goes through nav2_bringup_launch.py's own
 ReplaceString (namespace "ben", use_namespace true), then through the
 parameter list of the bt_task_navigator LifecycleNode in
-navigation_launch.py (its RewrittenYaml file and, for Nav2 older than 1.4,
-the error_code_names that legacy_error_code_params adds). The BEN
+navigation_launch.py (for Nav2 older than 1.4, the error_code_names that
+legacy_error_code_params adds, then its RewrittenYaml file), passed to
+the node in that order. The BEN
 navigator plugin and behaviour-tree library are replaced by the stock
 navigate_to_pose navigator, since they are not available here; the
 error-code handling under test is in Nav2's BtActionServer, which BEN's
@@ -86,11 +87,11 @@ def bt_task_navigator_parameters(context):
              if isinstance(e, LaunchNode) and e._Node__node_name == NODE]
     assert len(nodes) == 1, nodes
     parameters = nodes[0]._Node__parameters
-    assert isinstance(parameters[0], ParameterFile)
+    assert isinstance(parameters[-1], ParameterFile)
     evaluated = evaluate_parameters(context, parameters)
     # The ParameterFile deletes its evaluated file when it is collected: read it now.
     return (module.installed_nav2_bt_navigator_version(),
-            pathlib.Path(evaluated[0]).read_text(), evaluated[1:])
+            evaluated[:-1], pathlib.Path(evaluated[-1]).read_text())
 
 
 def stock_navigator_file(evaluated_text, out_dir):
@@ -144,13 +145,15 @@ def test_bt_task_navigator_configures(tmp_path, monkeypatch):
     assert '<robot_namespace>' not in pathlib.Path(replaced).read_text()
     context.launch_configurations['params_file'] = replaced
 
-    version, evaluated_text, extras = bt_task_navigator_parameters(context)
-    files = [stock_navigator_file(evaluated_text, tmp_path)]
+    version, extras, evaluated_text = bt_task_navigator_parameters(context)
+    # In the launch file's order: the extras, then the parameter file.
+    files = []
     for index, extra in enumerate(extras):
         path = tmp_path / f'extra_{index}.yaml'
         path.write_text(yaml.safe_dump({'/**': {'ros__parameters': dict(
             (k, list(v) if isinstance(v, tuple) else v) for k, v in extra.items())}}))
         files.append(path)
+    files.append(stock_navigator_file(evaluated_text, tmp_path))
     legacy = tuple(int(p) for p in version.split('.')[:2]) < (1, 4)
 
     executable = pathlib.Path(get_package_prefix('nav2_bt_navigator')) / 'lib' / \
