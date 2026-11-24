@@ -187,3 +187,102 @@ The plan is sound and its key readings hold from source: option A leaves Jazzy's
 **Decision**: proceed
 
 Read: the Plan Review at `bccb7b8`, verdict ready, five findings. Part 1 is implemented now. Host decisions on the planner's open questions: **option A** for the error-code fix (one parameter file with `error_code_name_prefixes`; `navigation_launch.py` adds the old `error_code_names` list when the installed `nav2_bt_navigator` is older than 1.4), keeping both branches identical as every other port has; the alternative was to let the branches differ in those lines. The Nav2 node and plugin packages are declared explicitly beside `nav2_bringup` (nothing more is installed). The navigator configure test stays. The three settings changes go in as planned (remove `action_server_result_timeout`, whose value was already Jazzy's default; remove `dock_backwards`, false by default on both; comment the `behavior_server` settings). Review findings, applied as follows: (1) the static test also asserts that **both** `bt_task_navigator` descriptions in `navigation_launch.py` (the lifecycle node and the composable node) carry the helper's result after the configured parameters, proved by removing it from one: that wiring is the only thing keeping `hover_error_code` on a Jazzy vehicle after the backport. (2) The version lookup is specified: the share directory of `nav2_bt_navigator`, the `<version>` of its `package.xml`, compared as an integer tuple, and **an error with a clear message on any failure, never a default** (a wrong default silently drops `hover` on Jazzy or crashes on Rolling); a guard case for an unparsable version. (3) The static test puts this package's install prefix on `AMENT_PREFIX_PATH`, since a launch file looks up `ben_project11`'s own share directory at load, and the manifest check excludes the package's own name. (4) The navigator test applies the launch file's placeholder substitutions (`<robot_namespace>`) as the launch does. (5) Part 2's outline says plainly that on Rolling a finished goal's result is kept for about 10 s, which matters only to a client that asks late; `mission_manager` asks at once, so its goals are not affected; the pull request states this as a known difference on Rolling for the owner.
+
+## Implementation
+**Status**: complete
+**When**: 2026-11-24 11:12 -05:00
+**By**: Claude Code Agent (claude-opus-5-5)
+**Branch**: feature/issue-30 at `301536c`
+
+Part 1 of the plan, eight commits in the plan's order, none touching `.agent/` (each cherry-picks onto `jazzy`, which is `b8a53a3` = `rolling`). Nothing was pushed or posted. **One new Rolling break found by step 9, not fixed (owner decision, below): `planner_server` refuses `GridBased.lookup_table_size: 55.0`.**
+
+### Commits
+
+1. `aae76a0` package.xml: declare what the launch and parameter files use
+2. `c02aa8a` Give bt_task_navigator error_code_name_prefixes, and error_code_names on Nav2 < 1.4
+3. `934ad6b` nav2_params.yaml: remove action_server_result_timeout
+4. `2686472` nav2_params.yaml: remove docking_server.dock_backwards
+5. `cd63732` nav2_params.yaml: say which distro reads the behavior_server settings
+6. `9c3219d` Add a static test of the launch and parameter files
+7. `4b0b4f1` Add a test that configures the stock bt_navigator with BEN's parameters
+8. `301536c` Add a Jazzy CI job
+
+### Why Jazzy's behaviour is unchanged, per commit
+
+1. Manifest only: changes what rosdep and colcon know, not what is launched. Every Nav2 package declared is in `navigation2`, which `nav2_bringup` (kept) already pulls on Jazzy; the project packages are already in the vehicle workspaces; nothing adds a viewer or simulator. `ament_cmake` added as a `buildtool_depend` beside `ament_cmake_ros` (kept).
+2. The Jazzy navigator (Nav2 1.3.x) gets `error_code_names` = `compute_path_error_code follow_path_error_code hover_error_code`, the file's list of today in its order, through a second parameter file after the first (launch_ros keys it `/ben/bt_task_navigator`, since name and namespace are given); `error_code_name_prefixes` is auto-declared and never read (no reference anywhere in Nav2 `origin/jazzy`). Logging is the same as today: with auto-declaration Jazzy skips its "Error_code parameters were set to" line in both cases.
+3. `action_server_result_timeout: 900.0` was Jazzy's default for both nodes it was set on (`bt_action_server_impl.hpp:67-68`, `waypoint_follower.cpp:40` on `origin/jazzy`).
+4. `dock_backwards: false` is Jazzy's declared default (`docking_server.cpp:41`).
+5. Comment only.
+6, 7. Tests only. 8. CI only.
+
+### The error-code fix
+
+- **Helper** (`launch/navigation_launch.py`): `LEGACY_ERROR_CODE_NAMES` (the old list); `nav2_version_tuple(version)` splits on `.` into ints and raises `RuntimeError("ben_project11: cannot parse the nav2_bt_navigator version ...")` for anything not at least two integers; `legacy_error_code_params(version)` returns `[{'error_code_names': [...]}]` below `(1, 4)` and `[]` otherwise; `installed_nav2_bt_navigator_version()` reads `<version>` from `get_package_share_directory('nav2_bt_navigator')/package.xml` and raises with a clear message on any failure or an empty version. No default anywhere. `bt_task_navigator_params = [configured_params] + legacy_error_code_params(installed_nav2_bt_navigator_version())` is the `parameters` of both the `LifecycleNode` and the `ComposableNode` named `bt_task_navigator`. Outputs: `1.2.9`, `1.3.0`, `1.3.14`, `1.3` give the three names; `1.4.0`, `1.4.2`, `1.5.0`, `1.5.3`, `2.0` give `[]`; `''`, `'abc'`, `'1'`, `None`, `'1.4.0rc1'` raise. Installed here: `1.5.0` gives `[]`.
+- **Rolling proof** (domain 187, checked empty with `ros2 node list --no-daemon`, `DISPLAY` unset, `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST`): the stock `bt_navigator` started as `/ben/bt_task_navigator` with the file as committed after the launch files' own substitutions (`nav2_bringup_launch.py`'s `ReplaceString`, giving `odom_topic: /ben/odom`, `global_frame: ben/map`, then `navigation_launch.py`'s `RewrittenYaml` under `ben`), BEN navigator plugin and BT library replaced by stock `navigate_to_pose`: `Creating navigator id navigate_to_pose ...`, `Error_code parameters were set to: compute_path follow_path hover`, configure success, state `inactive`, `error_code_names` undeclared, `error_code_name_prefixes` = the three. With `error_code_names` put back in a scratch copy: `[FATAL] ... Failed to create navigator id navigate_to_pose. Exception: parameter 'error_code_names' has been replaced by  'error_code_name_prefixes' and MUST be removed.`, process exits (-11).
+- **Jazzy argument** (Nav2 `origin/jazzy` `c7046550`, `nav2_bt_navigator` 1.3.14, by reading): `bt_navigator.cpp:37` auto-declares parameters from overrides, so both keys from the two files are declared at construction; `bt_action_server_impl.hpp:82` (`if (!node->has_parameter("error_code_names"))`) is then skipped and `:179` reads `error_code_names` into `error_code_names_` = the three names; `error_code_name_prefixes` occurs nowhere in the branch. Effective parameters: the same three names as today, plus one declared key nothing reads. `BtActionServer` is built by `nav2_core::BehaviorTreeNavigator` (`behavior_tree_navigator.hpp:205`), which BEN's `TaskNavigator` derives from.
+
+### Tests
+
+- `test/test_launch_and_config.py` (`ament_add_pytest_test`, 120 s, 26 cases): launch files load with fixed argument lists; the `.yaml` names in the launch files are exactly `nav2_params`, `ben`, `ben_sim`, each parses into `ros__parameters` blocks; every package named by `package=`, `FindPackageShare`, `get_package_share_directory`, non-stdlib imports, `plugin:` and `plugin_lib_names` (table: `marine_nav_behavior_tree_bt_plugins` -> `marine_nav_behavior_tree`, unknown library fails) is a `depend`/`exec_depend`, own name excluded; error-code guard; wiring of both `bt_task_navigator` descriptions (installed version patched to `1.3.14` and `1.5.0`; the first parameter must be the `ParameterFile`, the rest must evaluate to the helper's output). It puts its install prefix first on `AMENT_PREFIX_PATH` and asserts `get_package_share_directory('ben_project11')` is the install under test. The ROS 1 `.launch` files are outside it by extension (stated in its docstring).
+- `test/test_bt_navigator_params.py` (`ament_add_ros_isolated_pytest_test`, 120 s; 30 s per service wait, fails at once with the log if the navigator exits): builds the parameters from the launch files' own `ReplaceString` and `bt_task_navigator` `LifecycleNode` parameter list, starts and configures stock `bt_navigator`, reads back the parameters (Nav2 >= 1.4: prefixes are the three and `error_code_names` undeclared; older: `error_code_names` are the three).
+- **Breaks** (each on a fresh scratch copy built outside the source tree, `colcon build`, then the test file with `BEN_PROJECT11_INSTALL_PREFIX` at the scratch install; unbroken copy: 26 passed / 1 passed):
+
+| Break | Caught by |
+|---|---|
+| `error_code_names` put back in `nav2_params.yaml` | `test_error_code_names_is_in_no_parameter_file`; navigator test: FATAL, `bt_navigator exited (-11)` |
+| helper removed from the composable node | `test_both_bt_task_navigators_get_the_legacy_parameters[1.3.14]` ("ComposableNode ... Right contains one more item") |
+| helper removed from the lifecycle node | same test ("LifecycleNode ...") |
+| `ben_description` dropped from `package.xml` | `test_every_named_package_is_declared`: `not declared in package.xml: ['ben_description']` |
+| `s57_layer` dropped (a plugin package) | same: `['s57_layer']` |
+| broken indent in `nav2_params.yaml` | `test_parameter_file_parses_into_node_blocks[nav2_params.yaml]` (ScannerError) and 6 dependants |
+| `declare_log_level_cmd` not added in `navigation_launch.py` | `test_launch_file_loads_with_its_arguments[navigation_launch.py]` ("Right contains one more item: 'log_level'") |
+| `import no_such_module` in `ben_core_launch.py` | load test (`ModuleNotFoundError`) and manifest test |
+| helper gives the old key below 1.6 | `test_legacy_error_code_params_from_1_4[1.4.0, 1.4.2, 1.5.0]`; navigator test: FATAL |
+| helper returns a default on an unparsable version | `test_unparsable_version_is_an_error` x5 (DID NOT RAISE) |
+| `hover` dropped from the prefixes | `test_error_code_name_prefixes_hold_hover` + 3 legacy cases; navigator test (prefixes `['compute_path', 'follow_path']`) |
+
+- **Navigator test repeat**: 12 separate runs on Rolling, 12 passed (0.42 to 0.82 s), no failure; no `bt_navigator` left after.
+
+### By-hand Rolling checks (step 9)
+
+Nav2 underlay install built from `dcffa939` (reflog: clone 2026-11-19 08:51; builds 12:06 and 14:45; checkout fast-forwarded to `9113449e` on 2026-11-23 09:01, not rebuilt); `nav2_bt_navigator` 1.5.0 in both.
+
+- Build: `./build.sh --parallel-workers 2 --packages-up-to ben_project11` -> `Finished <<< ben_project11`, `Summary: 1 package finished`.
+- Tests: `./test.sh --parallel-workers 1 --packages-select ben_project11 --ctest-args -E test_bt_navigator_params` -> `26 passed`, `100% tests passed, 0 tests failed out of 1`, `Summary: 27 tests, 0 errors, 0 failures, 0 skipped`; it used `platforms_ws/install/ben_project11` (the test asserts the share directory). The navigator test was run outside colcon, with `python3 -m pytest` on domain 187 (12 runs above): colcon's isolated runner on Rolling (`run_rmw_isolated`) picks its own domain (seen 42, 71, 48), below 150, so it was not used here.
+- `--show-args`: `ben_core_launch.py`, `nav2_bringup_launch.py`, `navigation_launch.py` all print their arguments, exit 0.
+- `ament_xmllint package.xml`: `No problems found`.
+- Stock nodes, one at a time on domain 187, each `/ben/<name>` with the launch-substituted file, configured through `change_state`, then stopped (none left running): `controller_server` (with `local_costmap`; `FollowPath` replaced by stock `RegulatedPurePursuitController`; `chart_layer` removed), `smoother_server`, `behavior_server` (`hover` removed), `waypoint_follower`, `velocity_smoother`, `collision_monitor`, `docking_server` (`opennav_docking`): configure success, state `inactive`, no parameter warning (only `LifecycleNode is not shut down` at stop and, on `docking_server`, `Dock database filepath nor dock parameters set`, expected with no docks). **`planner_server` (with `global_costmap`, `chart_layer` removed): configure FAILED: `[FATAL] [ben.planner_server]: Failed to create global planner. Exception: lookup_table_size must be in [0.0, 20.0]`.** With `lookup_table_size: 20.0` in a scratch copy it configures (`inactive`), warnings only `On approach iteration selected as <= 0 ...` and `maximum iteration selected as <= 0 ...` (from `max_on_approach_iterations: -1`, `max_iterations: -1`).
+
+### New finding: `planner_server.GridBased.lookup_table_size: 55.0` (`config/nav2_params.yaml:178`), not fixed
+
+Nav2 `d7bf2ac0` (2026-10-03, #6566, "Validate parameter bounds ...", on `main` only; not on `origin/jazzy` or `origin/kilted`) throws in `SmacPlannerHybrid` configure when `lookup_table_size` is outside [0, 20]. On Rolling the planner server therefore fails to configure and the lifecycle manager's bring-up fails: a second hard break the plan's reading missed. Jazzy accepts 55 and uses it (the Hybrid-A* heuristic lookup table's extent, in metres). Any fix changes planning on one distro or adds a second version test, so it is the owner's choice, not part of this implementation: (a) a version-gated override in `navigation_launch.py` like the error codes (Rolling gets 20, Jazzy keeps 55); (b) 20 on both (changes Jazzy planning); (c) leave it, record it for Part 2. Worth knowing: if Nav2 backports #6566 to Jazzy, a vehicle's apt upgrade would hit the same failure. Recommend the host raise it before publishing.
+
+### Differences from the plan and the checkpoint
+
+- The navigator test asserts by reading the parameters back, not by a log line: on Jazzy the "Error_code parameters were set to" line is not printed when the key is auto-declared, so the plan's expected Jazzy log line will not appear; the read-back is the check on both distros. CI prints the Jazzy navigator's log in its own step.
+- The navigator test builds its parameters from the launch files' own `ReplaceString` and the lifecycle node's parameter list, rather than restating the substitutions.
+- Both tests put the install prefix on `AMENT_PREFIX_PATH` in the test (at run time) rather than through CMake `ENV` (configure time), so a stale or differently sourced environment cannot put another `ben_project11` first.
+- Proof-of-teeth extended with a dropped plugin package, a default instead of an error, and `hover` dropped.
+- The colcon run of the navigator test under the isolation wrapper was not done (domain rule above).
+
+### For the pull request
+
+- **Shown on Rolling**: the build; the static test; the stock navigator configures with the committed file and logs the three prefixes, and refuses the old key; seven of the eight other stock nodes configure with their blocks (BEN plugins replaced or removed); the planner server does not (finding above).
+- **Waits for Part 2**: BEN's navigator plugin (`TaskNavigator`), the behaviour-tree library (`marine_nav_behavior_tree_bt_plugins`), the path follower (`CrabbingPathFollower`), the hover behaviour (`Hover`) and the chart layer (`S57Layer`) are not ported, so nothing here shows they load or that a real hover failure reaches the result.
+- **Result timeout**: on Rolling a finished goal's result is kept for about 10 s (rcl's default) now that Nav2 has no setting for it; that matters only to a client that asks late; `mission_manager` asks at once (`mission_manager.py:207`).
+- **What the tests do not cover**: anything inside BEN plugins, value semantics, topics/QoS, TF-dependent activation, the composed bring-up at run time (only its descriptions), the ROS 1 files, and the other stock nodes' parameter handling (by hand only, above).
+- **Unverified on Jazzy** (not installed here: Ubuntu 26.04, no Docker): all of it beyond reading and a `rosdep install --simulate --rosdistro jazzy --os ubuntu:noble` with the ten skip-keys (all other keys resolve; without them, `Cannot locate rosdep definition for [marine_nav_behavior_tree]`). The pull request's first CI run is the first Jazzy evidence and this repository's first CI run: rosdep install, build, both tests, the navigator reading back `error_code_names`. Rehearsed on Rolling: the workflow's build and test steps with only `/opt/ros/rolling` and the underlay sourced, no workspace install (26 passed); the workflow's `rosdep` step on Rolling stops at `nav2_bringup` (no Nav2 release), as the file's header says.
+
+### Left alone (for a follow-up issue)
+
+- 22 ROS 1 `.launch` files (`launch/`): perception/sensors (`asv_perception`, `get_remote_radar`, `get_sensors`, `get_yolo_detects`, `test_radar_target_tracker`, `view_pano_thumbnails`); logging/replay (`log_lidar`, `log_sensors`, `log_temps`, `log_throttled_panos`, `replay_bag`); ROS 1 navigation (`costmap`, `costmap_chart`, `costmap_radar`, `move_base`, `navigator`); operator (`operator_mystique`, `operator_rqt`, `operator_ui`, `remote_operator`); simulation (`sim_ben_sandisland`, `sim_local_cw4`). Name a missing file: `replay_bag`, `operator_mystique`, `remote_operator` (`ben_description/launch/load.launch`), `costmap_chart` (`config/costmap_chart_voyage.yaml`), `sim_local_cw4` (`parameters/ben.yaml`). Companions in `config/`: `costmap.yaml`, `costmap_chart.yaml`, `costmap_common.yaml`, `costmap_radar.yaml`, `navigator.yaml`, `navigator_ccom_planner.yaml`, `dubins_planner.yaml`, `path_follower.yaml`, `platform.yaml`, `navigator.rviz`, `operator.rviz`, `operator.perspective`, the three `.desktop` files; `scripts/` (three tmux scripts).
+- `nav2_bringup` dependency (`package.xml`; this repository's issue 12).
+- Blocks that configure nothing: `config/nav2_params.yaml` `map_saver`; `config/ben.yaml` `navigator`, `asv_helm`.
+- Drift of the local copies of Nav2's bring-up files (`launch/nav2_bringup_launch.py`, `launch/navigation_launch.py`).
+- Composed mode in `launch/navigation_launch.py` starts a stray stock `bt_navigator` and omits `manda_coverage` although it is in `lifecycle_nodes`.
+- `config/ben_sim.yaml` applied inside a scoped `GroupAction` in `launch/ben_core_launch.py`, so its costmap settings may not reach Nav2.
+- `navigate_through_poses_error_code` written by unh_marine_navigation's `run_tasks.xml` but in no list.
+- `buildtool_depend ament_cmake_ros` (`package.xml`; now used by the isolated test).
+- Out of scope: parameters for the unreviewed field-server navigation work.
+- New: `lookup_table_size: 55.0` (above), pending the owner's choice.
