@@ -11,10 +11,40 @@
 
   <license>BSD</license>
 
+  <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>ament_cmake_ros</buildtool_depend>
   <depend>nav2_bringup</depend>
+
+  <!-- Imported or started by the Python launch files. -->
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>rclcpp_components</exec_depend>
+  <exec_depend>nav2_common</exec_depend>
+  <exec_depend>nav2_controller</exec_depend>
+  <exec_depend>nav2_smoother</exec_depend>
+  <exec_depend>nav2_planner</exec_depend>
+  <exec_depend>nav2_behaviors</exec_depend>
+  <exec_depend>nav2_bt_navigator</exec_depend>
+  <exec_depend>nav2_waypoint_follower</exec_depend>
+  <exec_depend>nav2_velocity_smoother</exec_depend>
+  <exec_depend>nav2_collision_monitor</exec_depend>
+  <exec_depend>opennav_docking</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
   <exec_depend>marine_autonomy</exec_depend>
   <exec_depend>manda_coverage</exec_depend>
+  <exec_depend>ben_description</exec_depend>
+  <exec_depend>mru_transform</exec_depend>
+  <exec_depend>s57_grids</exec_depend>
+
+  <!-- Plugins named in config/nav2_params.yaml. -->
+  <exec_depend>nav2_costmap_2d</exec_depend>
+  <exec_depend>nav2_smac_planner</exec_depend>
+  <exec_depend>s57_layer</exec_depend>
+  <exec_depend>marine_nav_bt_task_navigator</exec_depend>
+  <exec_depend>marine_nav_crabbing_path_follower</exec_depend>
+  <exec_depend>marine_nav_behaviors</exec_depend>
+  <exec_depend>marine_nav_behavior_tree</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
