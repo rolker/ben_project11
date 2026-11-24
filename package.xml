@@ -21,6 +21,7 @@
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>rclcpp_components</exec_depend>
   <exec_depend>nav2_common</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
   <exec_depend>nav2_controller</exec_depend>
   <exec_depend>nav2_smoother</exec_depend>
   <exec_depend>nav2_planner</exec_depend>
@@ -47,7 +48,6 @@
   <exec_depend>marine_nav_behavior_tree</exec_depend>
 
   <test_depend>ament_cmake_pytest</test_depend>
-  <test_depend>python3-yaml</test_depend>
   <test_depend>rclpy</test_depend>
   <test_depend>rcl_interfaces</test_depend>
   <test_depend>lifecycle_msgs</test_depend>
