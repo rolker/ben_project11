@@ -19,13 +19,12 @@ import xml.etree.ElementTree as ET
 
 from ament_index_python.packages import get_package_share_directory
 
-from launch import LaunchDescription
+from launch import LaunchDescription, Substitution
 from launch.actions import DeclareLaunchArgument, GroupAction, SetEnvironmentVariable
 from launch.conditions import IfCondition
+from launch.logging import get_logger
 from launch.substitutions import PathJoinSubstitution
 from launch.substitutions import LaunchConfiguration, PythonExpression
-from launch import Substitution
-from launch.logging import get_logger
 from launch.utilities import normalize_to_list_of_substitutions, perform_substitutions
 from launch_ros.actions import LoadComposableNodes, SetParameter
 from launch_ros.actions import Node
