@@ -166,7 +166,9 @@ def test_parameter_file_parses_into_node_blocks(name):
             return False
         if 'ros__parameters' in block:
             return isinstance(block['ros__parameters'], dict)
-        return all(reaches_parameters(value, depth + 1) for value in block.values())
+        # An empty block reaches nothing (all() of nothing would be true).
+        return bool(block) and \
+            all(reaches_parameters(value, depth + 1) for value in block.values())
 
     for key, block in data.items():
         assert reaches_parameters(block, 0), f'{name}: {key}'
