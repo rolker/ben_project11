@@ -188,7 +188,10 @@ def generate_launch_description():
     # --params-file, in this order, and a later file wins over an earlier
     # one for the same parameter. So the shipped file, which has no
     # error_code_names, gets the legacy names on Nav2 older than 1.4, and a
-    # params_file that sets its own error_code_names keeps them.
+    # params_file that sets its own error_code_names keeps them when its
+    # list is keyed by the node's name. (A list keyed '/**' loses when the
+    # namespace is empty: SetParameter's -p use_sim_time makes '/**' the
+    # first entry, so this list wins. BEN's namespace is 'ben'.)
     bt_task_navigator_params = legacy_error_code_params(
         installed_nav2_bt_navigator_version()) + [configured_params]
 
