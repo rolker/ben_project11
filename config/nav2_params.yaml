@@ -23,10 +23,14 @@ bt_task_navigator:
       - marine_nav_behavior_tree_bt_plugins
 
 
-    error_code_names:
-      - compute_path_error_code
-      - follow_path_error_code
-      - hover_error_code
+    # Nav2 1.4 and later (Rolling) read <prefix>_error_code from these
+    # prefixes and refuse error_code_names. Nav2 older than 1.4 (Jazzy)
+    # ignores this key; launch/navigation_launch.py gives it
+    # error_code_names with the same three names instead.
+    error_code_name_prefixes:
+      - compute_path
+      - follow_path
+      - hover
 
 
 
