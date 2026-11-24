@@ -423,3 +423,13 @@ Hygiene: no `.agent/` file in the eight code commits; each code commit's message
 
 ### Round-1 items
 All eight are closed by `47f00d3`, `239aae0`, `0a5dcac`, `da1937f`, `3e0dbec`, `55c2a1a`, `33fb08f` and `3995d83`, each checked above. Only CI will show the Jazzy evidence: the reordered dict reaching the Jazzy navigator, `_perform_substitutions` on Jazzy's launch_ros, the 1.3.14 planner wiring, and the count step on the Jazzy image.
+
+## Checkpoint
+**Status**: complete
+**When**: 2026-11-24 12:00 -05:00
+**By**: Claude Code Agent (claude-fable-5-2)
+**Decided-by**: host (the round-2 review approved with suggestions; the host takes its recommendation on the planner cap's design, a mechanism choice within the owner's "20 on new Nav2, 55 stays on Jazzy")
+**After**: publish
+**Decision**: address
+
+Read: the Local Review (Pre-Push) round 2 at `33fb08f`, approved, no must-fix, four suggestions. One more narrow fix pass before publishing: (1) **the planner cap is replaced by the simple override the review recommends**: on `nav2_smac_planner` 1.5 and later, a parameter entry `GridBased.lookup_table_size: 20.0` placed after the parameter file for both `planner_server` descriptions; below 1.5 the planner gets exactly the parameter file, as before. The launch-time rewriting substitution (about 110 lines), its temporary file and the `python3-yaml` exec dependency go. What is given up: on Rolling and Lyrical a custom parameter file's own value for that one key is overridden to 20 (also a legal value below 20), and the key is set when the file has none; no vehicle runs there, the shipped file is what the switch exists for, and the comment says how to change it. The owner's option read "the launch file lowers the value to 20 only where Nav2 has the limit, the same way the error-code fix switches on Nav2's version"; this is that, in about ten lines. (2) The comment on the error-code order is qualified for a `/**`-keyed list with an empty namespace. (3) The CI count takes pytest's "N tests collected" line and cannot stop silently on zero. (4) The pull request tells the owner the three things the review lists (the version cannot mark the limit exactly; a Nav2 backport of the limit to Jazzy would stop `planner_server` on a vehicle after an upgrade and the switch would not see it; the launch file now needs `nav2_smac_planner` installed to load).
