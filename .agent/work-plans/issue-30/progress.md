@@ -504,3 +504,13 @@ Reviewers: the lead alone (static analysis, governance, plan drift against the C
 
 ### Findings
 - [ ] (suggestion) CTest count: when `ctest --test-dir build/ben_project11 -N` fails (missing build dir, rc 1 shown on Rolling), `pipefail` + `set -e` end the step at the assignment with ctest's own "Failed to change working directory" and not the step's message; the `case` only covers an empty or non-numeric result. Still exit non-zero, so CI does not lie; `|| true` inside the substitution would route it to the message — `.github/workflows/ci.yml:169-170`
+
+## Checkpoint
+**Status**: complete
+**When**: 2026-11-24 12:10 -05:00
+**By**: Claude Code Agent (claude-fable-5-2)
+**Decided-by**: host (pre-push review round 3 approved with no must-fix)
+**After**: publish
+**Decision**: publish
+
+Read: the Local Review (Pre-Push) round 3 at `6152ab4`, approved, one suggestion: when `ctest -N` itself fails in the CI count step, the step stops with ctest's message instead of its own. It still exits non-zero, so CI cannot report a false pass; left as it is and named in the pull request. Commit `a285800` lacks the two attribution trailers; history is not rewritten for it. The pull request's first CI run is this repository's first CI run and the first Jazzy evidence for every commit here.
