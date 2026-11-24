@@ -7,7 +7,6 @@ bt_task_navigator:
     bt_loop_duration: 500
     default_server_timeout: 20
     wait_for_service_timeout: 1000
-    action_server_result_timeout: 900.0
     navigators: ["run_tasks",]
     run_tasks:
       plugin: "marine_nav_bt_task_navigator::TaskNavigator"
@@ -23,10 +22,15 @@ bt_task_navigator:
       - marine_nav_behavior_tree_bt_plugins
 
 
-    error_code_names:
-      - compute_path_error_code
-      - follow_path_error_code
-      - hover_error_code
+    # Nav2 1.4 and later (Kilted 1.4, Lyrical 1.5, and Nav2's main branch,
+    # which Rolling builds) read <prefix>_error_code from these prefixes and
+    # refuse error_code_names. Nav2 1.3 (Jazzy) ignores this key;
+    # launch/navigation_launch.py gives it error_code_names with the same
+    # three names instead.
+    error_code_name_prefixes:
+      - compute_path
+      - follow_path
+      - hover
 
 
 
@@ -172,6 +176,15 @@ planner_server:
       max_planning_time: 5.0
       analytic_expansion_max_length: 25.0
       angle_quantization_bins: 72
+      # Read as is by Nav2 1.3 (Jazzy) and 1.4 (Kilted). From Nav2's Smac
+      # planner 1.5 on, launch/navigation_launch.py overrides this to 20.0,
+      # because Nav2 there refuses more than 20 (d7bf2ac0 on main, 221cdb28
+      # on lyrical). The override replaces this value, and that of any
+      # custom parameter file (set when absent), for the planner id
+      # GridBased only: on those versions change it in the launch file, not
+      # here. The version cannot mark the limit exactly, so 1.5.0 to 1.5.2
+      # are lowered too, harmlessly; a backport of the limit to an older
+      # Nav2 line would not be detected.
       lookup_table_size: 55.0
       non_straight_penalty: 1.1
       use_quadratic_cost_penalty: false
@@ -217,6 +230,13 @@ behavior_server:
     global_frame: <tf_prefix>/map
     robot_base_frame: <tf_prefix>/base_link
     transform_tolerance: 0.1
+    # Read here, on the server, by Nav2 1.5 and older (Jazzy 1.3, Kilted
+    # 1.4, Lyrical 1.5): Spin reads all four, BackUp and DriveOnHeading read
+    # simulate_ahead_time. Nav2's main branch (Rolling) reads them per
+    # behaviour instead (spin.max_rotational_vel, backup.simulate_ahead_time,
+    # ...) and ignores these. The values are Nav2's defaults on both, so a
+    # change here applies to Nav2 1.5 and older only (the vehicles' Jazzy
+    # among them).
     simulate_ahead_time: 2.0
     max_rotational_vel: 1.0
     min_rotational_vel: 0.4
@@ -231,7 +251,6 @@ waypoint_follower:
   ros__parameters:
     loop_rate: 20
     stop_on_failure: false
-    action_server_result_timeout: 900.0
     waypoint_task_executor_plugin: "wait_at_waypoint"
     wait_at_waypoint:
       plugin: "nav2_waypoint_follower::WaitAtWaypoint"
@@ -296,7 +315,6 @@ docking_server:
     max_retries: 3
     base_frame: <tf_prefix>/base_link
     fixed_frame: <tf_prefix>/odom
-    dock_backwards: false
     dock_prestaging_tolerance: 0.5
 
     # Types of docks
